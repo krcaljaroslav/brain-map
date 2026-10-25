@@ -4,10 +4,13 @@
 
 Brain Map draws your Obsidian vault like a neural network: folders form branches, notes form leaves, and links connect them. Explore the structure in 2D or 3D, find a note by name, and open it from the map.
 
-<!-- IMG: assets/ - whole vault map in 2D -->
-<!-- IMG: assets/ - the same map in 3D -->
-<!-- IMG: assets/ - selected node panel with path, counts and actions -->
-<!-- IMG: assets/ - mobile map with search and selected node panel -->
+<img src="assets/brain-map-2d.png" alt="Whole vault map in 2D" width="100%" />
+
+<img src="assets/brain-map-settings.png" alt="2D map with the Settings panel and the Coral and amber palette" width="100%" />
+
+<img src="assets/brain-map-selection.png" alt="Selected folder with its links and the selection panel" width="100%" />
+
+<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map on a phone" width="360" /></p>
 
 ## Features
 

@@ -4,10 +4,13 @@
 
 Brain Map kreslí tvůj vault v Obsidianu jako neuronovou síť: složky tvoří větve, poznámky listy a odkazy je propojují. Prohlédni si strukturu ve 2D nebo 3D, najdi poznámku podle názvu a otevři ji přímo z mapy.
 
-<!-- IMG: assets/ - celá mapa vaultu ve 2D -->
-<!-- IMG: assets/ - stejná mapa ve 3D -->
-<!-- IMG: assets/ - panel vybraného uzlu s cestou, počty a tlačítky -->
-<!-- IMG: assets/ - mapa na mobilu s hledáním a panelem vybraného uzlu -->
+<img src="assets/brain-map-2d.png" alt="Celá mapa vaultu ve 2D" width="100%" />
+
+<img src="assets/brain-map-settings.png" alt="Mapa ve 2D s panelem Settings a paletou Coral and amber" width="100%" />
+
+<img src="assets/brain-map-selection.png" alt="Vybraná složka s vazbami a panelem výběru" width="100%" />
+
+<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map na telefonu" width="360" /></p>
 
 ## Funkce
 
