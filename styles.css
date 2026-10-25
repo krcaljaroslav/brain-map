@@ -1,0 +1,166 @@
+/* Mozek: styly pohledu pluginu. Všechno pod .mozek-koren (kořen pohledu), nic globálního: bez :root, *, html, body, #id,
+   position: fixed, vw/vh, safe-area a @media (šířku měří @container, panel není okno). Vzhled převzatý z webu mozek.css. */
+.mozek-koren {
+	--mozek-pozadi: #060913;
+	--mozek-sklo: rgba(10, 14, 28, 0.78);
+	--mozek-okraj: rgba(140, 170, 255, 0.22);
+	--mozek-text: #dde6ff;
+	--mozek-tlumeny: #8e9bc4;
+	--mozek-akcent: #4df3ff;
+	--mozek-tap: 44px;
+	/* P8: natažení o spodní padding hostitele (--mozek-odsazeni-dole měří src/prostor-listu.ts; Obsidian mobil ho dává view-content při
+	   klávesnici navíc k zmenšení app-container) a záporný okraj, ať view-content nezačne posouvat; na PC je proměnná 0 */
+	position: relative; width: 100%; height: calc(100% + var(--mozek-odsazeni-dole, 0px)); overflow: hidden; container-type: size;
+	box-sizing: border-box; margin: 0 0 calc(-1 * var(--mozek-odsazeni-dole, 0px)); padding: 0;
+	background: radial-gradient(ellipse at 50% 45%, #0d1430 0%, var(--mozek-pozadi) 62%, #02030a 100%);
+	color: var(--mozek-text);
+	color-scheme: dark;
+	font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	-webkit-tap-highlight-color: transparent;
+}
+/* reset hostitele pod kořenem: Obsidian a jeho motivy stylují button, input, select, h2; vzhled začíná od nuly */
+.mozek-koren *, .mozek-koren *::before, .mozek-koren *::after { box-sizing: border-box; }
+.mozek-koren button, .mozek-koren input, .mozek-koren select {
+	margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit;
+	font: inherit; line-height: inherit; min-height: 0; height: auto; appearance: none; -webkit-appearance: none;
+}
+.mozek-koren input[type="checkbox"] { appearance: auto; -webkit-appearance: auto; margin: 0; }
+.mozek-koren h1, .mozek-koren h2, .mozek-koren p, .mozek-koren ul { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; line-height: inherit; }
+.mozek-koren label { display: block; }
+
+.mozek-koren .mozek-platno {
+	position: absolute; inset: 0; width: 100%; height: 100%;
+	touch-action: none; display: block; cursor: grab; outline: none;
+}
+.mozek-koren .mozek-platno.tahnu { cursor: grabbing; }
+/* 3D pohled (B3b): WebGL plátno a plátno popisků, které bere gesta; 2D plátno zůstává v layoutu jen schované */
+.mozek-koren .mozek-platno3d, .mozek-koren .mozek-popisky3d { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+.mozek-koren .mozek-platno3d { pointer-events: none; }
+.mozek-koren .mozek-popisky3d { touch-action: none; cursor: grab; outline: none; }
+.mozek-koren .mozek-popisky3d.tahnu { cursor: grabbing; }
+.mozek-koren.pohled-3d .mozek-platno { visibility: hidden; }
+.mozek-koren.pohled-3d .mozek-platno3d, .mozek-koren.pohled-3d .mozek-popisky3d { display: block; }
+.mozek-koren:not(.pohled-3d) .jen-3d { display: none; }
+.mozek-koren.pohled-3d .jen-2d { display: none; }
+
+.mozek-koren .lista {
+	position: absolute; top: 0; left: 0; right: 0; z-index: 3;
+	display: flex; align-items: center; gap: 10px;
+	padding: 8px 12px;
+	pointer-events: none;
+}
+.mozek-koren .lista > * { pointer-events: auto; }
+.mozek-koren .meridlo { color: var(--mozek-tlumeny); font-size: 11px; white-space: normal; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+.mozek-koren .hledani { position: relative; flex: 1 1 0; min-width: 0; max-width: 420px; }
+.mozek-koren .hledani input {
+	width: 100%; min-height: 36px; padding: 6px 12px; border-radius: 10px;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); color: var(--mozek-text); font: inherit;
+	backdrop-filter: blur(6px);
+}
+.mozek-koren .hledani input:focus { outline: none; border-color: var(--mozek-akcent); box-shadow: 0 0 0 2px rgba(77, 243, 255, 0.25); }
+.mozek-koren .vysledky {
+	position: absolute; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); border-radius: 10px; backdrop-filter: blur(8px);
+	max-height: min(50cqh, 360px); overflow-y: auto; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+.mozek-koren .vysledky[hidden] { display: none; }
+.mozek-koren .vysledky li { padding: 7px 10px; border-radius: 7px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.mozek-koren .vysledky li:hover, .mozek-koren .vysledky li.aktivni { background: rgba(77, 243, 255, 0.12); }
+.mozek-koren .vysledky .nazev { font-weight: 600; }
+.mozek-koren .vysledky .cesta { color: var(--mozek-tlumeny); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mozek-koren .vysledky .prazdne { color: var(--mozek-tlumeny); cursor: default; }
+
+.mozek-koren .tlacitko {
+	min-height: 36px; padding: 6px 12px; border-radius: 9px; cursor: pointer; font: inherit;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); color: var(--mozek-text); backdrop-filter: blur(6px);
+}
+.mozek-koren .tlacitko:hover { border-color: var(--mozek-akcent); }
+.mozek-koren .tlacitko[aria-expanded="true"], .mozek-koren .tlacitko.aktivni { border-color: var(--mozek-akcent); color: var(--mozek-akcent); }
+.mozek-koren .tlacitko-ikona { min-width: 36px; padding: 0; font-size: 20px; line-height: 1; }
+.mozek-koren .tlacitko:disabled { opacity: 0.45; cursor: not-allowed; }
+.mozek-koren .prepinac-pohledu .tlacitko[aria-pressed="true"] { border-color: var(--mozek-akcent); color: var(--mozek-akcent); background: rgba(77, 243, 255, 0.1); }
+
+.mozek-koren .nastaveni {
+	position: absolute; z-index: 3; top: 56px; right: 12px; width: min(320px, calc(100% - 24px));
+	max-height: calc(100% - 68px - var(--mozek-prekryv-dole, 0px)); overflow-y: auto; overscroll-behavior: contain;
+	padding: 12px 14px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); backdrop-filter: blur(10px);
+	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.mozek-koren .nastaveni[hidden], .mozek-koren .nastaveni .pole[hidden] { display: none; }
+.mozek-koren .nastaveni .radek { display: flex; gap: 8px; }
+.mozek-koren .nastaveni .radek .tlacitko { flex: 1; }
+.mozek-koren .nastaveni .pole { display: flex; flex-direction: column; gap: 4px; color: var(--mozek-tlumeny); font-size: 12px; }
+.mozek-koren .nastaveni select {
+	min-height: 36px; padding: 6px 10px; border-radius: 8px; font: 14px system-ui, sans-serif;
+	background: rgba(0, 0, 0, 0.35); border: 1px solid var(--mozek-okraj); color: var(--mozek-text);
+}
+.mozek-koren .prepinac { display: flex; align-items: center; gap: 8px; min-height: var(--mozek-tap); cursor: pointer; }
+.mozek-koren .prepinac input { width: 18px; height: 18px; accent-color: var(--mozek-akcent); }
+.mozek-koren .info { color: var(--mozek-tlumeny); font-size: 12px; margin-left: auto; }
+.mozek-koren .napoveda { margin: 0; color: var(--mozek-tlumeny); font-size: 12px; }
+
+.mozek-koren .stav {
+	position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%);
+	margin: 0; padding: 10px 16px; border-radius: 10px; max-width: min(90%, 520px); text-align: center;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); color: var(--mozek-text);
+}
+.mozek-koren .stav.chyba { border-color: #ff5e7e; color: #ffc1cf; }
+.mozek-koren .stav[hidden] { display: none; }
+
+.mozek-koren .panel {
+	/* P8: --mozek-prekryv-dole = o kolik cizí prvek (plovoucí spodní lišta Obsidianu) překrývá spodek kořene, panel leží nad ním; PC 0 */
+	position: absolute; z-index: 3; left: 12px; bottom: calc(12px + var(--mozek-prekryv-dole, 0px)); width: min(360px, calc(100% - 24px));
+	padding: 12px 14px; border-radius: 12px;
+	background: var(--mozek-sklo); border: 1px solid var(--mozek-okraj); backdrop-filter: blur(10px);
+	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.mozek-koren .panel[hidden] { display: none; }
+.mozek-koren .panel-hlava { display: flex; align-items: flex-start; gap: 8px; }
+.mozek-koren .panel-hlava h2 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; word-break: break-word; }
+.mozek-koren .panel-cesta { margin: 4px 0 0; color: var(--mozek-tlumeny); font-size: 12px; word-break: break-all; }
+.mozek-koren .panel-cisla { margin: 8px 0 0; display: flex; gap: 14px; flex-wrap: wrap; }
+.mozek-koren .panel-cisla b { color: var(--mozek-akcent); font-weight: 600; }
+.mozek-koren .panel-akce { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mozek-koren .panel-akce .tlacitko[hidden] { display: none; }
+
+/* klávesnice na telefonu (B3, přejímka A4 4b): jádro dá kořeni třídu klavesnice a --mozek-vrch-viditelne / --mozek-vyska-viditelne
+   (viditelná část kořene ve visualViewport). Lišta hledání sjede do viditelné části, výsledky jsou kompaktní
+   (jen názvy) a nepřesáhnou viditelnou výšku; plátno pod tím se nemění. */
+.mozek-koren.klavesnice .lista { top: var(--mozek-vrch-viditelne, 0px); padding: 4px 8px; gap: 6px; }
+.mozek-koren.klavesnice .vysledky { max-height: calc(var(--mozek-vyska-viditelne, 100cqh) - 56px); }
+.mozek-koren.klavesnice .vysledky .cesta { display: none; }
+/* hledání s vybraným uzlem při klávesnici (P8 k2, rozhodnutí 22. 10.): dokud je klávesnice otevřená a fokus v hledání, dá
+   src/prostor-listu.ts kořeni třídu hledani-s-klavesnici a panel vybraného uzlu se schová (jinak by s výsledky zakryl celou mapu);
+   po zavření klávesnice se vrátí, výběr ani pohled se nemění. Výsledky zůstávají celé. Jen tahle třída, chování jde změnit tady. */
+.mozek-koren.hledani-s-klavesnici .panel { display: none; }
+
+/* úzký panel (telefon na výšku nebo úzký list): měří se šířka kořene, ne okna */
+@container (max-width: 700px) {
+	.mozek-koren .lista { gap: 6px; padding: 6px 8px; }
+	/* Měřidlo v Nastavení zůstává čitelné i v úzkém listu. */
+	.mozek-koren .lista { flex-wrap: wrap; }
+	.mozek-koren .meridlo { font-size: 10px; }
+	.mozek-koren .hledani { max-width: none; }
+	.mozek-koren .nastaveni { right: 8px; left: 8px; width: auto; top: 52px; }
+	.mozek-koren .panel { left: 0; right: 0; bottom: var(--mozek-prekryv-dole, 0px); width: auto; border-radius: 14px 14px 0 0; }
+	.mozek-koren .panel-akce .tlacitko { flex: 1 1 40%; min-height: var(--mozek-tap); }
+}
+
+/* nízký kořen na šířku (telefon na šířku, B3, přejímka A4 4d): panel detailu jako spodní lišta v jednom řádku místo karty
+   360 px × ~190 px (polovina výšky displeje 390 px). Lišta má ~56 px (14 % výšky), cesta se v ní nevejde a schová se;
+   název je v jednom řádku s výpustkou. Měří se výška kořene, ne okna. */
+@container (max-height: 500px) and (min-width: 600px) {
+	.mozek-koren .panel {
+		left: 0; right: 0; bottom: var(--mozek-prekryv-dole, 0px); width: auto; padding: 6px 10px; border-radius: 12px 12px 0 0;
+		display: flex; align-items: center; gap: 10px;
+	}
+	.mozek-koren .panel[hidden] { display: none; }
+	.mozek-koren .panel-hlava { flex: 1 1 auto; min-width: 0; align-items: center; }
+	.mozek-koren .panel-hlava h2 { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
+	.mozek-koren .panel-cesta { display: none; }
+	.mozek-koren .panel-cisla { margin: 0; flex: 0 0 auto; gap: 10px; font-size: 12px; white-space: nowrap; }
+	.mozek-koren .panel-akce { margin: 0; flex: 0 0 auto; flex-wrap: nowrap; }
+	.mozek-koren .panel-akce .tlacitko { min-height: 36px; padding: 4px 10px; }
+}

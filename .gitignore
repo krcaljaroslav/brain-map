@@ -1,0 +1,35 @@
+# Publish only the source, build configuration, and public documentation.
+/*
+!/src/
+!/main.ts
+!/styles.css
+!/manifest.json
+!/package.json
+!/tsconfig.json
+!/esbuild.config.mjs
+!/vitest.config.ts
+!/LICENSE
+!/README.md
+!/versions.json
+!/.gitignore
+!/.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/release.yml
+
+# Keep local dependencies, generated files, and secrets out of nested folders.
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+
+# Public documentation and future screenshots.
+!/README.cs.md
+!/assets/
+
+# Unused reference copies; retained locally for historical tests.
+/src/jadro/mozek-kopie.js
+/src/jadro/mozek-kopie.d.ts
+/src/jadro/mozek-dom.js

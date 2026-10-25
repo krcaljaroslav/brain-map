@@ -1,0 +1,26 @@
+{
+  "name": "brain-map",
+  "version": "0.1.8",
+  "description": "Mind map of your vault, drawn like a neural network: folders as branches, notes as leaves, links between them.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "validace": "bash tests/validace-a3.sh"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "20.19.41",
+    "esbuild": "0.21.5",
+    "obsidian": "1.13.1",
+    "tslib": "2.8.1",
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
