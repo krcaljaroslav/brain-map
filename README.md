@@ -19,7 +19,8 @@ Brain Map draws your Obsidian vault like a neural network: folders form branches
 | Vault map | Shows folders, notes and links from your vault in 2D or 3D. |
 | Search | Finds folders and files by name and flies to the selected result. |
 | Branches | Collapse folders below the vault root, or use **Expand all** and **Collapse all**. |
-| Selection panel | Shows the node name, path and incoming/outgoing link counts; folders also show how many files they contain, subfolders and non-note files included. Use **Open note** for files or **Collapse** / **Expand** for folders below the vault root. |
+| Selection panel | Shows the node name, path and incoming/outgoing link counts; folders also show their direct children, subfolders and non-note files included. Use **Open note** for files or **Collapse** / **Expand** for folders below the vault root. |
+| File and link lists | Click a nonzero count for direct children or linked notes; select an entry to fly there and use **Back** to return. Lists show up to 500 entries. |
 | Link highlight | Selecting a node draws its outgoing and incoming links in two colours, with pulses in the link direction, even with **Dependencies** off. |
 | Other files | Optionally includes PDFs, images and other files, with links from notes. |
 | Colours | Choose **Aurora**, **Neon night**, or **Coral and amber**. |
@@ -48,6 +49,7 @@ Requires Obsidian 1.8.7 or later.
 | Pan and zoom in 2D | Drag to pan; use the wheel or pinch with two fingers to zoom. |
 | Rotate, pan and zoom in 3D | Drag to rotate; right-drag or Shift-drag to pan; use the wheel to zoom. On touchscreens, drag with one finger to rotate and use two fingers to pan and zoom. |
 | Keyboard in 3D | With the canvas focused, R shows the overview, F flies to the selection and Esc clears it. WASD + Q/E move the camera; hold Shift to move faster. Esc also clears the selection in 2D. |
+| Browse files and links | Click or tap a count in the selection panel, then an entry. **Back** returns to the previous node; **Clear selection** clears this history. Esc or a click outside the list closes it. |
 | Search (2D / 3D) | Type at least two characters in **Search notes**; select a result or press Enter for the first one. |
 | Return to an overview or detail | **Overview** shows the whole map. With the whole map in view and a node selected, the button turns into **Detail** and flies back to the node. Neither changes collapsed folders or the selection. |
 | Refresh the tree | After adding, deleting, moving or renaming files, press **Refresh map** in the map's **Settings**, use the refresh icon in the map's header, or run **Brain Map: Refresh map**. Links between existing nodes update when Obsidian resolves them. |
@@ -64,7 +66,7 @@ Display controls are in the map's **Settings** panel; the plugin settings tab al
 | **Dependencies** | Shows links between notes and, with **Other files** enabled, links to those files. | Off |
 | **Other files** | Includes files other than Markdown notes. | Off |
 | **Orbit when idle** | Rotates the 3D view after a period without input. | On |
-| **Excluded folders** | One per line: a name excludes folders of that name anywhere; a path such as `Projects/Old` excludes only that folder from the vault root; a leading or trailing slash is ignored. Applies when you leave the field; hidden paths are always excluded. | `.git`, `.obsidian`, `_templates`, `Clippings`, `node_modules`, `__pycache__` |
+| **Excluded folders** | One per line: a name excludes folders of that name anywhere; a path such as `Projects/Old` excludes only that folder from the vault root; a leading or trailing slash is ignored. Applies when you leave the field; hidden paths are always excluded. | `_templates`, `Clippings`, `node_modules`, `__pycache__` |
 
 ## Mobile and tablet
 
@@ -89,7 +91,7 @@ The same command writes geometry to `Brain-Map-diagnostika.md` at the vault root
 
 ## Changelog
 
-<!-- **0.1.9** - ... -->
+**0.1.9** - Clickable file and link lists with **Back**, and fixes for the community directory review.
 
 **0.1.8** - First public version.
 

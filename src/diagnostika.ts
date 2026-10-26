@@ -2,7 +2,7 @@
  * Diagnostický export pro porovnání s generátorem webu mimo Obsidian (tests/porovnej-export.sh):
  * cesty uzlů z adaptéru, resolvedLinks omezené na to, co mapa vidí, verze Obsidianu a Platform.
  * Čistá funkce bez zápisu; zápis dělá příkaz pluginu v main.ts. Navíc záznam geometrie listu mapy pro zkoušku klávesnice na telefonu
- * (ZaznamGeometrie, P7 k2): jen v paměti, zapíše ho týž příkaz.
+ * : jen v paměti, zapíše ho týž příkaz.
  */
 import { jeCestaMimoMapu, postavMapu, VYCHOZI_VYLOUCENE_SLOZKY, type RozliseneVazby, type VaultProAdapter } from './adapter.ts';
 import { listyHostitele, PROMENNA_ODSAZENI, PROMENNA_PREKRYVU, prvkyMimoTok, TRIDA_LISTY_HOSTITELE, vyberListu, type DuvodNeviditelnosti } from './prostor-listu.ts';
@@ -17,7 +17,7 @@ export interface Diagnostika {
   ostatniUzly: string[];
   resolvedLinks: RozliseneVazby;
   pocty: { uzly: number; vazbyAdapteru: number; resolvedLinksZdroje: number; resolvedLinksCile: number };
-  /** záznam geometrie listu mapy (P7 k2, ZaznamGeometrie níže); doplní ho příkaz exportu v main.ts, bez textu poznámek a cest */
+  /** záznam geometrie listu mapy ; doplní ho příkaz exportu v main.ts, bez textu poznámek a cest */
   geometrie?: ExportGeometrie;
 }
 
@@ -65,7 +65,7 @@ export function sestavDiagnostiku(
 }
 
 /**
- * Záznam geometrie listu mapy pro zkoušku na telefonu (P7 k2, Codex xcheck P7 k1, „Diagnostika telefonu"): proč je list s klávesnicí
+ * Záznam geometrie listu mapy pro zkoušku na telefonu : proč je list s klávesnicí
  * jen ~18 px. Kruhový buffer posledních MAX_UDALOSTI_GEOMETRIE událostí (visualViewport resize/scroll, resize okna, focusin/focusout,
  * ResizeObserver kořene, orientationchange) jen v paměti pluginu; zapíše ho až příkaz Export diagnostiky. Žádný text: z prvků jen tag
  * a třídy, bez id, atributů, hodnot polí, názvů a cest poznámek. Událost, po které se geometrie nezměnila, jen zvýší počet opakování
@@ -94,7 +94,7 @@ export interface GeometriePrvku {
   keyboardHeight: string;
 }
 
-/** .mobile-navbar ve snímku (P8 k3): efektivní opacity, důvod neviditelnosti ('' = lišta nad kořenem) a třídy předků (is-hidden-nav, is-phone…). */
+/** .mobile-navbar ve snímku : efektivní opacity, důvod neviditelnosti ('' = lišta nad kořenem) a třídy předků (is-hidden-nav, is-phone…). */
 export interface ListaVeSnimku extends GeometriePrvku {
   opacity: number;
   duvod: DuvodNeviditelnosti;
@@ -102,7 +102,7 @@ export interface ListaVeSnimku extends GeometriePrvku {
   tridyPredku: string;
 }
 
-/** Prvek vyňatý z toku ve spodní polovině kořene mimo listy (P8 k3, jen pro přejímku: co by se dalo s lištou splést; chování neovlivní). */
+/** Prvek vyňatý z toku ve spodní polovině kořene mimo listy . */
 export interface PrvekMimoTokVeSnimku {
   tag: string;
   tridy: string;
@@ -127,11 +127,11 @@ export interface SnimekGeometrie {
   pripojeno: boolean;
   /** plátno, kořen, contentEl a jeho předci až po body (včetně) */
   prvky: GeometriePrvku[];
-  /** P8 k3: každá .mobile-navbar mimo listy (src/prostor-listu.ts) s rectem, opacity, důvodem a třídami předků; prázdné = v dokumentu žádná */
+  /** každá .mobile-navbar mimo listy (src/prostor-listu.ts) s rectem, opacity, důvodem a třídami předků; prázdné = v dokumentu žádná */
   listy: ListaVeSnimku[];
-  /** P8 k3: lišta, podle které se měří překryv (viditelná .mobile-navbar s nejvyšším vrchem); null = žádná, překryv 0 */
+  /** lišta, podle které se měří překryv (viditelná .mobile-navbar s nejvyšším vrchem); null = žádná, překryv 0 */
   listaHostitele: ListaVeSnimku | null;
-  /** P8 k3: prvky fixed/absolute ve spodní polovině kořene mimo listy (tag, třídy, rect) - přejímka z nich pozná skutečnou lištu, když .mobile-navbar chybí */
+  /** prvky fixed/absolute ve spodní polovině kořene mimo listy (tag, třídy, rect) - lze z nich poznat skutečnou lištu, když .mobile-navbar chybí */
   mimoTok: PrvekMimoTokVeSnimku[];
   /** P8: proměnné prostoru listu na kořeni (--mozek-odsazeni-dole, --mozek-prekryv-dole), prázdné = nenastavené */
   prostor: { odsazeniDole: string; prekryvDole: string } | null;
@@ -149,7 +149,7 @@ const tridyPrvku = (prvek: Element) => Array.from(prvek.classList).join(' ').sli
 
 export class ZaznamGeometrie {
   private udalosti: SnimekGeometrie[] = [];
-  /** Připojené listy mapy v pořadí připojení (P7 k3, Codex xcheck P7 k2 bod 4): měří se poslední, který je v dokumentu; odpojení ho vyřadí. */
+  /** Připojené listy mapy v pořadí připojení : měří se poslední, který je v dokumentu; odpojení ho vyřadí. */
   private pripojene: HTMLElement[] = [];
   private readonly zacatek = typeof performance === 'undefined' ? 0 : performance.now();
 

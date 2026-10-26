@@ -125,13 +125,13 @@
 .mozek-koren .panel-akce { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mozek-koren .panel-akce .tlacitko[hidden] { display: none; }
 
-/* klávesnice na telefonu (B3, přejímka A4 4b): jádro dá kořeni třídu klavesnice a --mozek-vrch-viditelne / --mozek-vyska-viditelne
+/* klávesnice na telefonu : jádro dá kořeni třídu klavesnice a --mozek-vrch-viditelne / --mozek-vyska-viditelne
    (viditelná část kořene ve visualViewport). Lišta hledání sjede do viditelné části, výsledky jsou kompaktní
    (jen názvy) a nepřesáhnou viditelnou výšku; plátno pod tím se nemění. */
 .mozek-koren.klavesnice .lista { top: var(--mozek-vrch-viditelne, 0px); padding: 4px 8px; gap: 6px; }
 .mozek-koren.klavesnice .vysledky { max-height: calc(var(--mozek-vyska-viditelne, 100cqh) - 56px); }
 .mozek-koren.klavesnice .vysledky .cesta { display: none; }
-/* hledání s vybraným uzlem při klávesnici (P8 k2, rozhodnutí 22. 10.): dokud je klávesnice otevřená a fokus v hledání, dá
+/* hledání s vybraným uzlem při klávesnici : dokud je klávesnice otevřená a fokus v hledání, dá
    src/prostor-listu.ts kořeni třídu hledani-s-klavesnici a panel vybraného uzlu se schová (jinak by s výsledky zakryl celou mapu);
    po zavření klávesnice se vrátí, výběr ani pohled se nemění. Výsledky zůstávají celé. Jen tahle třída, chování jde změnit tady. */
 .mozek-koren.hledani-s-klavesnici .panel { display: none; }
@@ -148,7 +148,7 @@
 	.mozek-koren .panel-akce .tlacitko { flex: 1 1 40%; min-height: var(--mozek-tap); }
 }
 
-/* nízký kořen na šířku (telefon na šířku, B3, přejímka A4 4d): panel detailu jako spodní lišta v jednom řádku místo karty
+/* nízký kořen na šířku : panel detailu jako spodní lišta v jednom řádku místo karty
    360 px × ~190 px (polovina výšky displeje 390 px). Lišta má ~56 px (14 % výšky), cesta se v ní nevejde a schová se;
    název je v jednom řádku s výpustkou. Měří se výška kořene, ne okna. */
 @container (max-height: 500px) and (min-width: 600px) {
@@ -164,3 +164,13 @@
 	.mozek-koren .panel-akce { margin: 0; flex: 0 0 auto; flex-wrap: nowrap; }
 	.mozek-koren .panel-akce .tlacitko { min-height: 36px; padding: 4px 10px; }
 }
+
+.mozek-koren .panel-cisla button { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; height: 30px; min-height: 30px; margin: calc((1lh - 30px) / 2) 0; }
+.mozek-koren .panel-cisla button:disabled { cursor: default; opacity: 0.6; }
+.mozek-koren .mozek-panel-menu { position: absolute; z-index: 5; bottom: calc(100% + 6px); left: 0; width: 100%; box-sizing: border-box; margin: 0; padding: 4px; list-style: none; max-height: var(--mozek-menu-vyska, 0px); overflow-y: auto; overscroll-behavior: contain; background: var(--mozek-pozadi); border: 1px solid var(--mozek-okraj); border-radius: 8px; }
+.mozek-koren .mozek-panel-menu[hidden] { display: none; }
+.mozek-koren .mozek-panel-menu button { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; width: 100%; min-height: var(--mozek-tap, 44px); padding: 8px; text-align: left; white-space: normal; height: auto; color: var(--mozek-text); background: transparent; border: 0; cursor: pointer; }
+.mozek-koren .mozek-panel-menu button:hover, .mozek-koren .mozek-panel-menu button:focus-visible { background: var(--mozek-sklo); outline: 1px solid var(--mozek-akcent); }
+.mozek-koren .mozek-menu-nazev { overflow-wrap: anywhere; }
+.mozek-koren .mozek-menu-cesta, .mozek-koren .mozek-menu-dalsi { color: var(--mozek-tlumeny); font-size: 12px; overflow-wrap: anywhere; }
+.mozek-koren .mozek-menu-dalsi { padding: 8px; }

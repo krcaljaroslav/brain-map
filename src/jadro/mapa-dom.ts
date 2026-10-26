@@ -1,3 +1,4 @@
+import { vytvorPrvek } from '../dom-prvky.ts';
 // DOM mapy Mozek (B1b): totéž, co index.html webu, ale vytvořené uvnitř kontejneru bez globálních id. Jediné id je lokální
 // a unikátní pro aria-controls; místo modulového čítače instancí (mozek-dom.js) ho tvoří náhodná přípona, takže modul nemá
 // žádný stav. Prvky se vracejí v mapě pod stejnými klíči, jaké web čte přes getElementById.
@@ -7,8 +8,8 @@ export type PrvkyMapy = Map<string, HTMLElement>;
 
 export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMapy, muzeObnovit = false): { koren: HTMLElement; prvky: PrvkyMapy } {
 	const prvky: PrvkyMapy = new Map();
-	const el = (znacka: string, atributy: Record<string, unknown> = {}, deti: (HTMLElement | string)[] = []): HTMLElement => {
-		const prvek = dokument.createElement(znacka);
+	const el = (znacka: keyof HTMLElementTagNameMap, atributy: Record<string, unknown> = {}, deti: (HTMLElement | string)[] = []): HTMLElement => {
+		const prvek = vytvorPrvek(dokument, znacka);
 		for (const [jmeno, hodnota] of Object.entries(atributy)) {
 			if (jmeno === 'klic') prvky.set(String(hodnota), prvek);
 			else if (jmeno === 'text') prvek.textContent = String(hodnota);
@@ -56,7 +57,8 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 			el('div', { class: 'panel-hlava' }, [el('h2', { klic: 'panel-nazev' }), tlacitko('panel-zavrit', '×', { class: 'tlacitko tlacitko-ikona', 'aria-label': t.zrusitVyber })]),
 			el('p', { klic: 'panel-cesta', class: 'panel-cesta' }),
 			el('p', { klic: 'panel-cisla', class: 'panel-cisla' }),
-			el('div', { class: 'panel-akce' }, [tlacitko('panel-sbalit', t.sbalit), tlacitko('panel-obsidian', t.otevritPoznamku), tlacitko('panel-zrusit', t.zrusitVyber)]),
+			el('ul', { klic: 'panel-menu', class: 'mozek-panel-menu', hidden: true, 'aria-label': t.souboru(2) }),
+			el('div', { class: 'panel-akce' }, [tlacitko('panel-sbalit', t.sbalit), tlacitko('panel-obsidian', t.otevritPoznamku), tlacitko('panel-zrusit', t.zrusitVyber), tlacitko('panel-zpet', t.zpet, { hidden: true })]),
 		]),
 	]);
 	kontejner.append(koren);

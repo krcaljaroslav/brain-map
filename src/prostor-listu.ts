@@ -1,33 +1,35 @@
+import { vytvorPrvek } from './dom-prvky.ts';
+import { setCssStyles } from './css-styly.ts';
 /**
- * Prostor listu pro kořen mapy (P8, přejímka P7 na telefonu 21. 10.): měření hostitele jen do vlastních proměnných a jedné třídy na kořeni,
+ * Prostor listu pro kořen mapy : měření hostitele jen do vlastních proměnných a jedné třídy na kořeni,
  * které promítne styles.css. Nic z Obsidianu se nepředpokládá bez dokladu; co doložené není, je tu označené NEOVĚŘENO.
  * - --mozek-odsazeni-dole: spodní padding contentEl (view-content). Obsidian mobil při klávesnici zmenší app-container o výšku klávesnice
  *   a navíc dá view-content padding-bottom téže výšky (diagnostika z telefonu, snímek „ted": contentEl paddingBottom 358.4px při výšce
  *   387.8 px, kořen s height: 100 % jen 17.4 px). Kořen se o změřený padding natáhne a záporným spodním okrajem ho vrátí (styles.css).
  * - --mozek-prekryv-dole: o kolik px spodní lišta Obsidianu mobilu překrývá spodek kořene; panel detailu se o to zvedne. Lištou je
- *   jen viditelný kontejner .mobile-navbar mimo .workspace-leaf (P8 k3: dva nezávislé uživatelské CSS snippety z fóra Obsidianu,
+ *   jen viditelný kontejner .mobile-navbar mimo .workspace-leaf (dva nezávislé uživatelské CSS snippety z fóra Obsidianu,
  *   17. 1. a 12. 8. 2026, shodně .mobile-navbar > .mobile-navbar-actions s --navbar-height 52px a skrývání .is-hidden-nav .mobile-navbar
- *   přes transform a opacity; proti zdroji Obsidianu NEOVĚŘENO, přejímka to změří ze snímku diagnostiky). Žádná heuristika podle polohy
+ *   přes transform a opacity; proti zdroji Obsidianu NEOVĚŘENO, lze změřit ze snímku diagnostiky). Žádná heuristika podle polohy
  *   ani hit-test (k1-k2 braly cizí absolute prvek, status bar i lištu s opacity 0). B5 přidává systémový spodní inset i bez DOM lišty:
  *   na mobilu se čte --safe-area-inset-bottom s fallbackem env(safe-area-inset-bottom), bere se větší z obou překryvů; PC má systémový inset 0.
- *   Hodnotu nativního insetu na konkrétním Android WebView musí potvrdit přejímka.
+ *   Hodnotu nativního insetu na konkrétním Android WebView je nutné změřit na zařízení.
  *   Viditelná = ne display none, ne visibility hidden, efektivní opacity > 0 (součin přes předky), žádný předek .is-hidden-nav, rect
  *   s plochou na obrazovce, vodorovně i svisle protíná kořen. Překryv = kořen.bottom − lišta.top z getBoundingClientRect (transform
  *   se v rectu projeví). Diagnostika (src/diagnostika.ts) navíc zaznamená každou .mobile-navbar s důvodem neviditelnosti a prvky
  *   vyňaté z toku ve spodní polovině mimo listy; chování to neovlivní.
- * - třída TRIDA_HLEDANI_S_KLAVESNICI na kořeni (rozhodnutí 22. 10., Eywa za Jaroslava): dokud je otevřená klávesnice (změřený padding > 0,
+ * - třída TRIDA_HLEDANI_S_KLAVESNICI na kořeni : dokud je otevřená klávesnice (změřený padding > 0,
  *   nebo třída klavesnice od jádra při překryvné klávesnici) a fokus je v hledání, styles.css schová panel vybraného uzlu; po zavření
  *   klávesnice se vrátí, výběr ani pohled se nemění (jádro o tom neví). Jen třída, ať se dá chování změnit bez zásahu do logiky.
  * Měří se při připojení, při změně velikosti contentEl (ResizeObserver), při resize a orientationchange okna, při resize visualViewport,
  * při pointerdown, focusin a focusout v listu, při změně třídy nebo stylu contentEl a kteréhokoli jeho předka až po html, při změně
  * třídy kořene (MutationObserver), při změně třídy nebo stylu lišty .mobile-navbar a jejích předků až po body (MutationObserver jen na
- * atributy, přepojí se při výměně lišty) a po transitionend/transitioncancel na liště nebo jejím předku (P8 k4, Codex xcheck k3 F1:
+ * atributy, přepojí se při výměně lišty) a po transitionend/transitioncancel na liště nebo jejím předku (, :
  * Obsidian lištu vrací CSS přechodem opacity/transform; měření v okamžiku sundání .is-hidden-nav vidí začátek přechodu, opacity 0 nebo
  * rect mimo obrazovku, a zapsalo 0 px; bez měření po doběhnutí přechodu panel zůstal pod lištou do dalšího klepnutí nebo resize).
  * Posluchač přechodů je na dokumentu s filtrem na lištu (bublá, přežije výměnu lišty); žádný časovač. Předci: hostitel přepíná padding třídou nebo stylem (na telefonu body dostává --keyboard-height
  * a třídu keyboard-animating, diagnostika 21. 10.), MutationObserver běží ještě před rozvržením, takže proměnná kořene odpovídá
  * paddingu už v prvním rozvržení po změně; bez toho view-content přetekl a ResizeObserver hlásil „loop completed with undelivered
- * notifications" (P8 k1 F2 e, test 11). Kořen (P8 k3 F3): jádro sundá třídu klavesnice až po měření hostitele, nebo klávesnice
+ * notifications" . Kořen : jádro sundá třídu klavesnice až po měření hostitele, nebo klávesnice
  * skončí jen přes visualViewport bez blur - bez přeměření by hledani-s-klavesnici zůstala a panel by se nevrátil. Každý zápis je
  * idempotentní (jen změna hodnoty, třída jen při rozdílu), takže vlastní zápis na kořen vyvolá nejvýš jedno další měření bez zápisu.
  * Připojuje se před vznikem jádra (pohled.ts): záloha pro změnu paddingu, kterou MutationObserver nevidí (pravidlo stylu bez změny
@@ -118,7 +120,7 @@ function prekryvListy(koren: HTMLElement, lista: Lista | null): number {
   return Math.max(0, Math.ceil(koren.getBoundingClientRect().bottom - lista.rect.top));
 }
 
-/** Prvek vyňatý z toku (fixed, absolute) ve spodní polovině kořene mimo listy a kořen: jen záznam pro přejímku, chování neovlivní. */
+/** Prvek vyňatý z toku (fixed, absolute) ve spodní polovině kořene mimo listy a kořen: jen záznam pro měření, chování neovlivní. */
 export interface PrvekMimoTok {
   prvek: Element;
   rect: DOMRect;
@@ -160,16 +162,17 @@ export interface ProstorListu {
  * Napojí měření pro jeden list (contentEl; kořen .mozek-koren v něm vznikne až jádrem, hledá se při každém měření). registruj =
  * registerDomEvent pohledu. Bez DOM (testy pohledu nad mockem listu) se nic nenapojí.
  */
-export function pripojProstorListu(contentEl: HTMLElement, registruj: (cil: EventTarget, typ: string, fn: () => void, dalsi?: AddEventListenerOptions) => void, mobil = false): ProstorListu {
+export function pripojProstorListu(contentEl: HTMLElement, registruj: (cil: EventTarget, typ: string, fn: EventListener, dalsi?: AddEventListenerOptions) => void, mobil = false): ProstorListu {
   const dokument = contentEl.ownerDocument, okno = dokument?.defaultView;
   if (!dokument || !okno) return { zmer() {}, odpoj() {} };
-  const insetSonda = dokument.createElement('div');
+  const insetSonda = vytvorPrvek(dokument, 'div');
   insetSonda.setAttribute('aria-hidden', 'true');
-  insetSonda.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none;padding-bottom:var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))';
+  insetSonda.setAttribute('class', 'mozek-inset-sonda');
+  setCssStyles(insetSonda, { position: 'absolute', width: '0', height: '0', visibility: 'hidden', pointerEvents: 'none', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' });
   if (mobil) contentEl.append(insetSonda);
   const nastav = (koren: HTMLElement, promenna: string, hodnota: string) => { if (koren.style.getPropertyValue(promenna) !== hodnota) koren.style.setProperty(promenna, hodnota); };
   let mutaceKorene: MutationObserver | null = null, pozorovanyKoren: HTMLElement | null = null;
-  // lišty hostitele (P8 k4): atributy každé .mobile-navbar mimo listy a jejích předků, které nesleduje už pozorovatel předků listu
+  // lišty hostitele : atributy každé .mobile-navbar mimo listy a jejích předků, které nesleduje už pozorovatel předků listu
   let mutaceList: MutationObserver | null = null, pozorovaneListy: Element[] = [];
   const predciListu = new Set<Element>();
   const volbyAtributu: MutationObserverInit = { attributes: true, attributeFilter: ['class', 'style'] };
@@ -210,7 +213,7 @@ export function pripojProstorListu(contentEl: HTMLElement, registruj: (cil: Even
     if (cil.closest(`.${TRIDA_LISTY_HOSTITELE}`) || cil.querySelector(`.${TRIDA_LISTY_HOSTITELE}`)) zmer();
   };
   const typyPrechodu = ['transitionend', 'transitioncancel'];
-  for (const typ of typyPrechodu) dokument.addEventListener(typ, poPrechodu, { capture: true, passive: true });
+  for (const typ of typyPrechodu) registruj(dokument, typ, poPrechodu, { capture: true, passive: true });
   let pozorovatel: ResizeObserver | null = null;
   if (typeof okno.ResizeObserver === 'function') {
     pozorovatel = new okno.ResizeObserver(zmer);

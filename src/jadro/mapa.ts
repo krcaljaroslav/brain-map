@@ -1,5 +1,6 @@
+import { vytvorPrvek } from '../dom-prvky.ts';
 // Jádro mapy Mozek jako instance (WBS B1b): vytvorMapu(kontejner, data, volby) → { destroy, nastavData, nastavVolby, … }.
-// Vzniklo z referenční kopie src/jadro/mozek-kopie.js (web mozek.js, www-stranky 8ecaf0d): logika rozložení a kreslení je
+// Vzniklo z referenční kopie src/jadro/mozek-kopie.js : logika rozložení a kreslení je
 // beze změny, mění se jen obal - veškerý stav žije v uzávěru instance (na úrovni modulu jsou jen typy a tato funkce), DOM jen
 // v kontejneru (mapa-dom.ts), posluchače přes předanou registraci (plugin: registerDomEvent) v seznamu instance, ResizeObserver
 // na kontejneru, destroy() uklidí posluchače, časovač podržení, rAF, observer i plátna. Volby mají tytéž klíče mozek.*, jaké web
@@ -7,13 +8,14 @@
 // Původní popis: radiální strom na plátně, složky po soustředných úrovních (každá hloubka dál od středu)
 // s relaxací po obvodu, iluze hloubky (z-souřadnice a perspektiva), sémantický zoom, vazby z wikilinků.
 // Data dává adaptér vaultu ve formátu data.json webu (jen cesty a vazby, žádný text poznámek).
-import type { DataMapy, Vazba } from '../adapter.ts';
+import { setCssStyles } from '../css-styly.ts';
+import type { DataMapy, Vazba, Uzel } from '../adapter.ts';
 import { vytvorPohled3d, platnaKamera3d, type Kamera3d } from './mozek3d.ts';
 import { postavDom } from './mapa-dom.ts';
 import { vychoziTextyMapy, type TextyMapy } from './texty-mapy.ts';
 
 /** Registrace posluchače DOM; plugin předá registerDomEvent, bez ní jádro volá addEventListener. destroy() posluchače odebere vždy. */
-export type RegistracePosluchace = (cil: EventTarget, typ: string, posluchac: (udalost: any) => void, volby?: AddEventListenerOptions) => void;
+export type RegistracePosluchace = (cil: EventTarget, typ: string, posluchac: EventListener, volby?: AddEventListenerOptions) => void;
 
 /**
  * Volby a hostitel instance. `hodnoty` jsou volby při vzniku pod klíči webu: mozek.paleta ('0'-'2'), mozek.sbalene (JSON pole cest),
@@ -51,7 +53,7 @@ export interface MeridloMapy {
 
 export interface InstanceMapy {
 	/** Ladicí getter pro harnessy (pripraveno, cesty, promitni(i) → {xy, z, s}, hloubka, pocetUzlu, pohled, rozmery, vybrany, …). */
-	readonly ladeni: Record<string, any>;
+	readonly ladeni: Record<string, unknown>;
 	readonly meridlo: MeridloMapy;
 	destroy(): void;
 	/** Nová data (Obnovit, změna vaultu): strom, rozložení a barvy se přestaví ve stejné instanci; volby, pohled a DOM zůstanou. */
@@ -69,21 +71,22 @@ export interface InstanceMapy {
 	obnovPohled(stav: unknown): void;
 }
 
-interface Posluchac { cil: EventTarget; typ: string; fn: (udalost: any) => void; volby?: AddEventListenerOptions }
+interface Posluchac { cil: EventTarget; typ: string; fn: EventListener; volby?: AddEventListenerOptions }
 interface Viditelny { id: number; x: number; y: number; r: number; alfa: number }
 interface Obdelnik { x0: number; y0: number; x1: number; y1: number }
+interface Let2d { od: Pohled; cil: Pohled; start: number; trvani: number; poTe(this: void): void }
 interface Pohled { x: number; y: number; k: number }
 
 // stav od hostitele (historie listu, workspace.json) je nedůvěryhodný: bez kladných konečných čísel se nepoužije (jádro i getState
 // pohledu před onOpen)
-export function platnyStavPohledu(stav: any): StavPohledu | null {
+export function platnyStavPohledu(stav: unknown): StavPohledu | null {
 	if (!stav || typeof stav !== 'object') return null;
-	const { x, y, k, sirka: s, vyska: v, natazeni: f, vybrany: cestaVyberu } = stav;
+	const { x, y, k, sirka: s, vyska: v, natazeni: f, vybrany: cestaVyberu } = stav as StavPohledu;
 	if (![x, y, k, s, v, f].every((cislo) => typeof cislo === 'number' && Number.isFinite(cislo)) || k <= 0 || s <= 0 || v <= 0 || f <= 0) return null;
 	if (cestaVyberu !== null && typeof cestaVyberu !== 'string') return null;
-	if (stav.rezim !== undefined && stav.rezim !== '2d' && stav.rezim !== '3d') return null;
-	const kamera3d = platnaKamera3d(stav.kamera3d);
-	return { x, y, k, sirka: s, vyska: v, natazeni: f, vybrany: cestaVyberu, ...(stav.rezim ? { rezim: stav.rezim } : {}), ...(kamera3d ? { kamera3d } : {}) };
+	if ((stav as StavPohledu).rezim !== undefined && (stav as StavPohledu).rezim !== '2d' && (stav as StavPohledu).rezim !== '3d') return null;
+	const kamera3d = platnaKamera3d((stav as StavPohledu).kamera3d);
+	return { x, y, k, sirka: s, vyska: v, natazeni: f, vybrany: cestaVyberu, ...((stav as StavPohledu).rezim ? { rezim: (stav as StavPohledu).rezim } : {}), ...(kamera3d ? { kamera3d } : {}) };
 }
 
 export function vytvorMapu(kontejner: HTMLElement, data: DataMapy, volby: VolbyMapy = {}): InstanceMapy {
@@ -92,14 +95,14 @@ const MAX_KRIVEK = 1500;       // nejsilnějších křivek závislostí najednou
 const MAX_DPR = 2;
 const MAX_POPISKU = 500;
 // mobilní gesta (B3): zoom dvěma prsty roste s poměrem vzdálenosti prstů umocněným na CITLIVOST_SEVRENI (web 1 = lineárně;
-// přejímka A4 4c: „plynulé, akorát rychlé"); 0,6 dává při obvyklém roztažení 80 → 180 px 1,63× místo 2,25×, tedy zhruba
+// 0,6 dává při obvyklém roztažení 80 → 180 px 1,63× místo 2,25×, tedy zhruba
 // tři zoubky kolečka na PC (1,17× na zoubek, to zůstává). Dotyk začínající u svislého okraje obrazovky patří Obsidianu
 // (swipe bočních panelů): jádro ho nezachytí ani nezačne tažení; sledování klávesnice: viditelná část kořene ve visualViewport
 // menší o víc než PRAH_KLAVESNICE px = klávesnice (nebo jiné překrytí), lišta hledání se přesune do viditelné části.
 const CITLIVOST_SEVRENI = 0.6;
 const OKRAJ_OBSIDIANU = 24;
 const PRAH_KLAVESNICE = 100;
-// P7 k3 (Codex xcheck P7 k2 bod 1): během držení plochy se geometrie ověřuje i bez události (klávesnice zavřená bez VV/RO události)
+// během držení plochy se geometrie ověřuje i bez události (klávesnice zavřená bez VV/RO události)
 const KONTROLA_DRZENI_MS = 250;
 const ZLATY_UHEL = Math.PI * (3 - Math.sqrt(5));
 // poloměr úrovně podle hloubky složky: každá další úroveň dál od středu, skoky se zkracují, ať je celek kompaktní
@@ -120,19 +123,20 @@ const PALETY = [
 // sprity bodů podle úrovně rozostření 0 (blízko, ostré jádro) až 3 (daleko, měkké): zastávky gradientu a síla jádra
 const JADRO_SPRITU = [[0.2, 0.36, 0.64, 1], [0.12, 0.3, 0.6, 0.85], [0.06, 0.26, 0.62, 0.65], [0.02, 0.2, 0.66, 0.5]];
 
-const dokument = kontejner.ownerDocument, okno = dokument.defaultView as Window & typeof globalThis;
+const dokument = kontejner.ownerDocument, okno = dokument.defaultView as Window & typeof window;
 const casVzniku = performance.now();
 const texty: TextyMapy = { ...vychoziTextyMapy(), ...volby.texty };
 const { koren, prvky } = postavDom(dokument, kontejner, texty, !!volby.obnov);
-const prvek = (id: string): any => prvky.get(id);
+type Prvky = { 'pohled-3d': HTMLButtonElement; platno: HTMLCanvasElement; platno3d: HTMLCanvasElement; popisky3d: HTMLCanvasElement; hledat: HTMLInputElement; paleta: HTMLSelectElement; hloubka: HTMLInputElement; krouzeni: HTMLInputElement; ostatni: HTMLInputElement; zavislosti: HTMLInputElement };
+const prvek = <K extends string>(id: K): K extends keyof Prvky ? Prvky[K] : HTMLElement => prvky.get(id) as K extends keyof Prvky ? Prvky[K] : HTMLElement;
 const platno = prvek('platno');
 const ctx = platno.getContext('2d') as CanvasRenderingContext2D;
-const statika = dokument.createElement('canvas');
+const statika = vytvorPrvek(dokument, 'canvas');
 const sctx = statika.getContext('2d') as CanvasRenderingContext2D;
 // hierarchie výběru se mění jen se statickou vrstvou nebo výběrem, ne s impulzy: kreslí se jednou do vlastní vrstvy
-const vrstvaHierarchie = dokument.createElement('canvas'), hctx = vrstvaHierarchie.getContext('2d') as CanvasRenderingContext2D;
+const vrstvaHierarchie = vytvorPrvek(dokument, 'canvas'), hctx = vrstvaHierarchie.getContext('2d') as CanvasRenderingContext2D;
 // životní cyklus instance (A3b, B1b): posluchače v seznamu instance (registrace přes volby.registruj, odebrání v destroy),
-// uložené rAF a časovač podržení, observer kontejneru, pauza bez plochy; měřidlo pro přejímku na zařízení
+// uložené rAF a časovač podržení, observer kontejneru, pauza bez plochy; měřidlo pro měření na zařízení
 const posluchace: Posluchac[] = [];
 const registruj: RegistracePosluchace = volby.registruj ?? ((cil, typ, fn, dalsi) => { cil.addEventListener(typ, fn, dalsi); });
 // volby pod klíči mozek.*: kopie hodnot při vzniku, uloz je drží v souladu s hostitelem, nastavVolby je mění zvenku
@@ -141,18 +145,18 @@ let zniceno = false, pozastaveno = false, obsluhyNapojeny = false, fitHotov = fa
 let bezPlochy = false, skrytoHostitelem = false, zrusGesto: () => void = () => {};   // pauza = nulová plocha nebo list skrytý podle hostitele; gesto ruší napojOvladani
 // klávesnice (P7): viditelná část kořene ve visualViewport (souřadnice kořene) a příznak, že plátno drží plochu před klávesnicí
 let viditelnaCast = { vrch: 0, vyska: 0 }, plochaPredKlavesnici = false, kontrolaDrzeni: number | null = null;
-// P7 k2 (Codex xcheck P7 k1, F1 a F2): nezakrytá plocha listu (rozměr bez klávesnice) se drží odděleně od plátna, i přes skrytí listu;
+// nezakrytá plocha listu (rozměr bez klávesnice) se drží odděleně od plátna, i přes skrytí listu;
 // pomer = o kolik px se zmenšil kořen na 1 px poklesu okna nebo visualViewportu (Android adjustResize ~1, telefon z mezizkoušky ~2,
 // iOS 0), aby šla po otočení odvodit nová nezakrytá výška. oknoBezKlavesnice = okno a visualViewport, při kterých jádro naposledy
 // převzalo plochu bez klávesnice; klávesnice je jen zmenšení, které odpovídá jejich poklesu (resize panelu okno nemění)
 let nezakryta: { sirka: number; vyska: number; pomer: number } | null = null;
 let oknoBezKlavesnice = { sirka: 0, vyska: 0, vvSirka: 0, vvVyska: 0 };
 const meridlo: MeridloMapy = { prvniSnimekMs: null, snimekVyberuMs: null, pametMB: null };
-let meridloCekaVyber = false, ladeni: Record<string, any> = { pripraveno: false };
+let meridloCekaVyber = false, ladeni: Record<string, unknown> = { pripraveno: false };
 let verzeStatiky = 0, klicVrstvyVyberu = '', uzlyPopiskuVyberu: Viditelny[] = [];
 
 // --- data a odvozené struktury ---
-let zdrojovaData: any, ostatniZapnute = false, indexyZdroje: any = null;
+let zdrojovaData: DataMapy, ostatniZapnute = false, indexyZdroje: Int32Array = null!;
 let pocet = 0, rodic: Int32Array, typ: Uint8Array, vaha: Float64Array, jmeno: string[], cesta: string[], hloubka: Int32Array, potomci: number[][], konecPodstromu: Int32Array, vetev: Int32Array;
 let px: Float64Array, py: Float64Array, zet: Float32Array, smer: Float64Array, tloustka: Float64Array, barva: string[], barvaRgb: number[][], podCx: Float64Array, podCy: Float64Array, podR: Float64Array, podZmin: Float32Array, podZmax: Float32Array, rozestup: Float64Array, hledaciJmeno: string[], potomciKresleni: number[][];
 let odchozi: number[][], prichozi: number[][], vazby: number[][] = [];
@@ -163,9 +167,9 @@ let fitObrazovka: number[] | null = null;       // obdélník na obrazovce, kter
 let pohled: Pohled = { x: 0, y: 0, k: 1 }, kFit = 1, dpr = 1, sirka = 0, vyska = 0;
 // obnova po Zpět (P6): stav čekající na první plochu; plocha, při které platí pohled (skrytý list hlásí nulový rozměr)
 let cekajiciPohled: StavPohledu | null = platnyStavPohledu(volby.stavPohledu), plochaPohledu = [0, 0];
-let viditelne: Viditelny[] = [], individualni: any, kotva: Int32Array | null, verzeViditelnosti = 0, zavislostiCache: any = null;
-let vybrany = -1, vyberVazby: any = null, zasahyPopisku = new Map<number, Obdelnik>(), zasahyPopiskuVyberu = new Map<number, Obdelnik>();
-let statikaSpinava = true, smyckaBezi = false, let_: any = null, posledniVykresleniMs = 0;
+let viditelne: Viditelny[] = [], individualni: Uint8Array, kotva: Int32Array | null, verzeViditelnosti = 0, zavislostiCache: ReturnType<typeof spocitejZavislosti> | null = null;
+let vybrany = -1, vyberVazby: ReturnType<typeof vazbyUzlu> = null!, zasahyPopisku = new Map<number, Obdelnik>(), zasahyPopiskuVyberu = new Map<number, Obdelnik>();
+let statikaSpinava = true, smyckaBezi = false, let_: Let2d | null = null, posledniVykresleniMs = 0;
 // 3D pohled (mozek3d.js): vlastní plátna a kamera, společný výběr, sbalení, paleta a panel; 2D stav se při přepnutí nemění
 let pohled3d: ReturnType<typeof vytvorPohled3d> | null = null, pohled3dAktivni = false;
 let kameraObnovy: Kamera3d | null = null;
@@ -227,7 +231,7 @@ function jeTelefon() {
 function sprit(klic: string, rgb: number[], tvrdy: boolean, uroven: number) {
 	const cacheKlic = klic + (tvrdy ? 't' + uroven : 'm');
 	if (sprity.has(cacheKlic)) return sprity.get(cacheKlic) as HTMLCanvasElement;
-	const velikost = 96, plocha = dokument.createElement('canvas');
+	const velikost = 96, plocha = vytvorPrvek(dokument, 'canvas');
 	plocha.width = plocha.height = velikost;
 	const c = plocha.getContext('2d') as CanvasRenderingContext2D;
 	const g = c.createRadialGradient(velikost / 2, velikost / 2, 0, velikost / 2, velikost / 2, velikost / 2);
@@ -257,13 +261,13 @@ function kresliZari(c: CanvasRenderingContext2D, x: number, y: number, polomer: 
 }
 
 // --- data (hostitel je dává argumentem, žádný fetch) ---
-function overData(vstup: any) {
+function overData(vstup: DataMapy) {
 	if (!vstup || !Array.isArray(vstup.nodes) || !Array.isArray(vstup.links)) throw new Error(texty.neplatnaData);
 	return vstup;
 }
-function pripravStruktury(data: any) {
+function pripravStruktury(data: DataMapy) {
 	// Přeznačení indexů zachová při vypnuté volbě i pořadí a číselné vazby původní mapy.
-	const indexy = new Int32Array(data.nodes.length).fill(-1), uzly = [];
+	const indexy = new Int32Array(data.nodes.length).fill(-1), uzly: Uzel[] = [];
 	for (let i = 0; i < data.nodes.length; i++) {
 		const [r, n, t, w, p] = data.nodes[i];
 		if (t === 2 && !ostatniZapnute) continue;
@@ -273,13 +277,13 @@ function pripravStruktury(data: any) {
 	indexyZdroje = indexy;
 	pocet = uzly.length;
 	rodic = new Int32Array(pocet); typ = new Uint8Array(pocet); vaha = new Float64Array(pocet); hloubka = new Int32Array(pocet);
-	jmeno = new Array(pocet); cesta = new Array(pocet); potomci = new Array(pocet); konecPodstromu = new Int32Array(pocet);
-	hledaciJmeno = new Array(pocet); vetev = new Int32Array(pocet);
+	jmeno = new Array<string>(pocet); cesta = new Array<string>(pocet); potomci = new Array<number[]>(pocet); konecPodstromu = new Int32Array(pocet);
+	hledaciJmeno = new Array<string>(pocet); vetev = new Int32Array(pocet);
 	for (let i = 0; i < pocet; i++) {
 		const [r, n, t, w, p] = uzly[i];
 		rodic[i] = r === null ? -1 : r; jmeno[i] = n; typ[i] = t; vaha[i] = w; cesta[i] = p; potomci[i] = [];
 		hloubka[i] = r === null ? 0 : hloubka[r] + 1;
-		vetev[i] = hloubka[i] <= 1 ? i : vetev[r];   // hlavní větev (uzel hloubky 1), do které uzel patří
+		vetev[i] = hloubka[i] <= 1 ? i : vetev[r!];   // hlavní větev (uzel hloubky 1), do které uzel patří
 		if (r !== null) potomci[r].push(i);
 		hledaciJmeno[i] = bezDiakritiky(n);
 	}
@@ -292,9 +296,9 @@ function pripravStruktury(data: any) {
 	pripravVazby(data);
 }
 // vazby zvlášť: událost resolved v Obsidianu přestaví jen je, strom a rozložení zůstanou
-function pripravVazby(data: any) {
+function pripravVazby(data: DataMapy) {
 	const odkazy = (data.links as number[][]).filter(([a, b]) => indexyZdroje[a] >= 0 && indexyZdroje[b] >= 0).map(([a, b]) => [indexyZdroje[a], indexyZdroje[b]]);
-	odchozi = new Array(pocet); prichozi = new Array(pocet);
+	odchozi = new Array<number[]>(pocet); prichozi = new Array<number[]>(pocet);
 	for (let i = 0; i < pocet; i++) { odchozi[i] = []; prichozi[i] = []; }
 	vazby = odkazy.filter(([a, b]) => a >= 0 && b >= 0 && a < pocet && b < pocet && a !== b);
 	for (const [a, b] of vazby) { odchozi[a].push(b); prichozi[b].push(a); }
@@ -303,7 +307,7 @@ function pripravVazby(data: any) {
 
 // --- rozložení (deterministické, jednou po načtení) ---
 // Za koncem tabulky poloměr roste dál posledním skokem: s nulovým skokem by se pás listů dělil nulou
-// a NaN by přes požadavky prolezl do celé mapy (strom hlubší než 11 úrovní, xcheck k4+k5).
+// a NaN by přes požadavky prolezl do celé mapy .
 function polomerUrovne(h: number) {
 	const n = POLOMER_UROVNE.length - 1;
 	return h <= n ? POLOMER_UROVNE[h] : POLOMER_UROVNE[n] + (h - n) * (POLOMER_UROVNE[n] - POLOMER_UROVNE[n - 1]);
@@ -326,7 +330,7 @@ function rozloz() {
 	rozlozListy(uhel, polomer, vlevo, vpravo);
 	// kreslí se odzadu dopředu: potomci seřazení podle z (vzdálení první)
 	const prazdne: number[] = [];
-	potomciKresleni = new Array(pocet);
+	potomciKresleni = new Array<number[]>(pocet);
 	for (let i = 0; i < pocet; i++) potomciKresleni[i] = potomci[i].length ? potomci[i].slice().sort((a, b) => zet[a] - zet[b] || a - b) : prazdne;
 	pxZakl = px.slice(); pyZakl = py.slice(); smerZakl = smer.slice();
 	otoceno = false; natazeni = 1;
@@ -500,7 +504,7 @@ function spocitejObalky() {
 // --- barvy ---
 function obarvi() {
 	const paleta = PALETY[paletaIdx];
-	barva = new Array(pocet); barvaRgb = new Array(pocet);
+	barva = new Array<string>(pocet); barvaRgb = new Array<number[]>(pocet);
 	barva[0] = '#ffffff';
 	const slozkyRootu = potomci[0].filter((d) => typ[d] === 0);
 	slozkyRootu.forEach((s, i) => { barva[s] = paleta.barvy[i % paleta.barvy.length]; });
@@ -550,7 +554,7 @@ function prizpusobPohled() {
 	const cilX = okraj + plochaW / 2, cilY = lista + okraj + plochaH / 2, cx = sirka / 2, cy = vyska / 2;
 	pohled = { k: 1, x: cx, y: cy };
 	// Prázdný vault (jen kořen): rozměr je jen záře bodu v pixelech, která na měřítku nezávisí, takže by iterace
-	// zvětšovala donekonečna (xcheck k4+k5). Kořen se jen vystředí v ploše s měřítkem 1.
+	// zvětšovala donekonečna . Kořen se jen vystředí v ploše s měřítkem 1.
 	if (pocet <= 1) {
 		pohled = { k: 1, x: cilX, y: cilY };
 		kFit = 1;
@@ -608,7 +612,7 @@ function zmenVelikost() {
 	if (pozastaveno) return;   // list skrytý podle hostitele: rozměr se převezme až při zviditelnění (nastavViditelnost)
 	if (novyDpr === dpr && novaSirka === sirka && novaVyska === vyska) return;   // ResizeObserver hlásí i stejný rozměr; nastavení width by smazalo plátno
 	dpr = novyDpr; sirka = novaSirka; vyska = novaVyska; plochaPohledu = [sirka, vyska];
-	if (!plochaPredKlavesnici) zapamatujOkno();   // plocha bez klávesnice: k ní se měří pokles okna (P7 k2)
+	if (!plochaPredKlavesnici) zapamatujOkno();   // plocha bez klávesnice: k ní se měří pokles okna 
 	for (const c of [platno, statika, vrstvaHierarchie]) { c.width = Math.round(sirka * dpr); c.height = Math.round(vyska * dpr); }
 	zneplatniStatiku();
 }
@@ -637,10 +641,10 @@ function nastavViditelnost(viditelny: boolean) {
 	skrytoHostitelem = !viditelny;
 	prepocitejPauzu();
 	if (pozastaveno) return;
-	// klávesnice se mohla během skrytí zavřít (nebo list otočit) bez události, kterou jádro vidí: držení plochy se ověří znovu (P7 k2, F1)
+	// klávesnice se mohla během skrytí zavřít (nebo list otočit) bez události, kterou jádro vidí: držení plochy se ověří znovu 
 	prepocitejViditelnouCast();
 	const poNavratu = sledujKlavesnici();
-	spustKontroluDrzeni();   // držení trvá i po zobrazení: kontrola pauzou zastavená běží dál (P7 k3)
+	spustKontroluDrzeni();   // držení trvá i po zobrazení: kontrola pauzou zastavená běží dál 
 	if (poNavratu === 'konec' || poNavratu === 'drzena') { prevezmiRozmer(); posunPlatna(); pozadujSnimek(); return; }
 	posunPlatna();
 	if (fitHotov) prevezmiRozmer(); else zmenVelikost();   // skrytý list se mohl i otočit; první fit dál obnoví čekající stav P6
@@ -752,7 +756,7 @@ function kresliListy(c: CanvasRenderingContext2D, slozka: number, listy: number[
 	}
 }
 // stopka listu od bodu složky; cil = Path2D (svazek listů) nebo kontext (jedna podsvícená stopka ve výběru)
-function pridejStopku(cil: any, ax: number, ay: number, ua: number | null, bx: number, by: number, ub: number) {
+function pridejStopku(cil: CanvasPath, ax: number, ay: number, ua: number | null, bx: number, by: number, ub: number) {
 	const delka = Math.hypot(bx - ax, by - ay);
 	const u0 = ua === null ? Math.atan2(by - ay, bx - ax) : ua;
 	cil.moveTo(ax, ay);
@@ -849,7 +853,7 @@ function viditelnyPredek(i: number) {
 	return kotva[i];
 }
 function spocitejZavislosti() {
-	const mapa = new Map();
+	const mapa = new Map<number, number>();
 	for (const [a, b] of vazby) {
 		const va = viditelnyPredek(a), vb = viditelnyPredek(b);
 		if (va === vb) continue;
@@ -867,7 +871,7 @@ function krivkaMezi(ax: number, ay: number, bx: number, by: number, sul: number 
 function kresliZavislosti(c: CanvasRenderingContext2D) {
 	if (!zavislostiCache) zavislostiCache = spocitejZavislosti();
 	const { krivky, celkem, maxPocet } = zavislostiCache;
-	const pozice = new Map();
+	const pozice = new Map<number, Viditelny>();
 	for (const v of viditelne) pozice.set(v.id, v);
 	const rgb = hexNaRgb(PALETY[paletaIdx].vazba);
 	c.strokeStyle = PALETY[paletaIdx].vazba;
@@ -953,7 +957,7 @@ function umistiPopisekVetve(c: CanvasRenderingContext2D, v: Viditelny, volno: (x
 function kresliPopisky(c: CanvasRenderingContext2D) {
 	c.globalCompositeOperation = 'source-over';
 	c.textBaseline = 'middle';
-	const bunka = 64, obsazene = new Map();
+	const bunka = 64, obsazene = new Map<number, number[][]>();
 	const volno = (x0: number, y0: number, x1: number, y1: number) => {
 		// popisek se nikdy neusekne: co se nevejde celé na plátno, se nekreslí (zkusí se ještě levá strana)
 		if (x0 < 0 || y0 < 0 || x1 > sirka || y1 > vyska) return false;
@@ -967,7 +971,7 @@ function kresliPopisky(c: CanvasRenderingContext2D) {
 		for (let gx = bx0; gx <= bx1; gx++) for (let gy = by0; gy <= by1; gy++) {
 			const klic = gx * 100003 + gy;
 			if (!obsazene.has(klic)) obsazene.set(klic, []);
-			obsazene.get(klic).push(obdelnik);
+			obsazene.get(klic)!.push(obdelnik);
 		}
 		return true;
 	};
@@ -984,13 +988,13 @@ function kresliPopisky(c: CanvasRenderingContext2D) {
 	const rozpocet = rozpocetPopisku(), prehled = pohled.k < kFit * PREHLED_DO, pouzitaJmena = new Set();
 	// body hlavních větví a středu jsou v mřížce obsazené: popisek jedné hlavní větve nesmí zakrýt bod druhé
 	for (const v of viditelne) if (hloubka[v.id] <= 1 && typ[v.id] === 0) volno(v.x - v.r - 2, v.y - v.r - 2, v.x + v.r + 2, v.y + v.r + 2);
-	zasahyPopisku = new Map();
+	zasahyPopisku = new Map<number, Obdelnik>();
 	let nakresleno = 0;
 	for (const v of kandidati) {
 		if (nakresleno >= rozpocet) break;
 		const slozka = typ[v.id] === 0, hlavni = hloubka[v.id] === 1;
 		if (prehled && !hlavni) {
-			// v přehledu se opakující název (slides, Transcripts, concepts) ukáže na podstrom hlavní větve jen jednou
+			// v přehledu se opakující název  ukáže na podstrom hlavní větve jen jednou
 			const klicJmena = vetev[v.id] + '|' + jmeno[v.id];
 			if (pouzitaJmena.has(klicJmena)) continue;
 			pouzitaJmena.add(klicJmena);
@@ -1028,7 +1032,7 @@ function kresliPopisky(c: CanvasRenderingContext2D) {
 function vazbyUzlu(i: number) {
 	const zacatek = i, konec = konecPodstromu[i];
 	const uvnitr = (n: number) => n >= zacatek && n < konec;
-	const ven = new Map(), dovnitr = new Map();
+	const ven = new Map<number, number>(), dovnitr = new Map<number, number>();
 	let venCelkem = 0, dovnitrCelkem = 0;
 	for (let n = zacatek; n < konec; n++) {
 		if (typ[n] === 0) continue;
@@ -1038,13 +1042,54 @@ function vazbyUzlu(i: number) {
 	return { ven, dovnitr, venCelkem, dovnitrCelkem };
 }
 function seskupPodleKotvy(mapa: Map<number, number>) {
-	const skupiny = new Map();
+	const skupiny = new Map<number, number>();
 	for (const [uzel, n] of mapa) { const k = viditelnyPredek(uzel); skupiny.set(k, (skupiny.get(k) || 0) + n); }
 	return [...skupiny.entries()].sort((p, q) => q[1] - p[1]);
 }
+const historiePanelu: string[] = [];
+function zavriMenuPanelu() {
+ prvek('panel-menu').hidden = true;
+ for (const tlacitko of prvek('panel-cisla').querySelectorAll('button')) tlacitko.setAttribute('aria-expanded', 'false');
+}
+function zmerMenuPanelu() {
+ const vrch = prvek('panel').getBoundingClientRect().top;
+ const viditelnyVrch = Math.max(koren.getBoundingClientRect().top, okno.visualViewport?.offsetTop ?? 0);
+ koren.style.setProperty('--mozek-menu-vyska', `${Math.max(0, Math.floor(vrch - viditelnyVrch - 12))}px`);
+}
+function otevriMenuPanelu(druh: string) {
+ const seznam = prvek('panel-menu');
+ const stejne = !seznam.hidden && seznam.dataset.druh === druh;
+ zavriMenuPanelu();
+ if (stejne || vybrany < 0) return;
+ const podleJmena = (a: number, b: number) => jmeno[a].localeCompare(jmeno[b], 'en', { sensitivity: 'base' }) || cesta[a].localeCompare(cesta[b], 'en');
+ const uzly: [number, number][] = druh === 'files'
+  ? potomci[vybrany].slice().sort((a, b) => Number(typ[a] !== 0) - Number(typ[b] !== 0) || podleJmena(a, b)).map(i => [i, 1])
+  : [...(druh === 'outgoing' ? vyberVazby.ven : vyberVazby.dovnitr) ].sort((a, b) => b[1] - a[1] || podleJmena(a[0], b[0]));
+ seznam.replaceChildren();
+ seznam.dataset.druh = druh;
+ seznam.setAttribute('aria-label', druh === 'files' ? texty.souboru(2) : druh === 'outgoing' ? texty.odchozich : texty.prichozich);
+ for (const [i, pocetOdkazu] of uzly.slice(0, 500)) {
+  const radek = vytvorPrvek(dokument, 'li'), tlacitko = vytvorPrvek(dokument, 'button');
+  tlacitko.type = 'button'; tlacitko.dataset.uzel = String(i);
+  const nazev = vytvorPrvek(dokument, 'span'); nazev.className = 'mozek-menu-nazev'; nazev.textContent = jmeno[i];
+  const pocet = vytvorPrvek(dokument, 'span'); pocet.className = 'mozek-menu-pocet'; pocet.textContent = druh !== 'files' && pocetOdkazu > 1 ? String(pocetOdkazu) : '';
+  const rodicCesta = vytvorPrvek(dokument, 'span'); rodicCesta.className = 'mozek-menu-cesta'; rodicCesta.textContent = rodic[i] > 0 ? cesta[rodic[i]] : texty.korenVaultu;
+  tlacitko.append(nazev, pocet, rodicCesta); radek.append(tlacitko); seznam.append(radek);
+ }
+ if (uzly.length > 500) { const zbytek = vytvorPrvek(dokument, 'li'); zbytek.className = 'mozek-menu-dalsi'; zbytek.textContent = texty.dalsich(uzly.length - 500); seznam.append(zbytek); }
+ zmerMenuPanelu(); seznam.hidden = false; seznam.scrollTop = 0;
+ prvek('panel-cisla').querySelector(`[data-seznam="${druh}"]`)?.setAttribute('aria-expanded', 'true');
+}
+function letZPanelu(i: number, zpet = false) {
+ if (!zpet && vybrany >= 0) historiePanelu.push(cesta[vybrany]);
+ zavriMenuPanelu();
+ letNa(i, true);
+}
 function vyber(i: number) {
+ zavriMenuPanelu();
+ if (i < 0) historiePanelu.length = 0;
 	vybrany = i;
-	vyberVazby = i >= 0 ? vazbyUzlu(i) : null;
+	vyberVazby = i >= 0 ? vazbyUzlu(i) : null!;
 	naplnPanel();
 	meridloCekaVyber = i >= 0;
 	pozadujSnimek();
@@ -1058,10 +1103,15 @@ function naplnPanel() {
 	prvek('panel-cesta').textContent = i === 0 ? texty.korenVaultu : cesta[i];
 	const cisla = prvek('panel-cisla');
 	cisla.replaceChildren();
-	const polozka = (hodnota: number, popis: string) => { const span = dokument.createElement('span'); const b = dokument.createElement('b'); b.textContent = String(hodnota); span.append(b, ` ${popis}`); cisla.append(span); };
-	if (slozka) polozka(vaha[i], texty.souboru(vaha[i]));
-	polozka(vyberVazby.venCelkem, texty.odchozich);
-	polozka(vyberVazby.dovnitrCelkem, texty.prichozich);
+ const polozka = (hodnota: number, popis: string, druh: string) => {
+  const tlacitko = vytvorPrvek(dokument, 'button'); tlacitko.type = 'button'; tlacitko.dataset.seznam = druh;
+  tlacitko.disabled = hodnota === 0; tlacitko.setAttribute('aria-expanded', 'false');
+  const b = vytvorPrvek(dokument, 'b'); b.textContent = String(hodnota); tlacitko.append(b, ` ${popis}`); cisla.append(tlacitko);
+ };
+ if (slozka) polozka(potomci[i].length, texty.souboru(potomci[i].length), 'files');
+ polozka(vyberVazby.venCelkem, texty.odchozich, 'outgoing');
+ polozka(vyberVazby.dovnitrCelkem, texty.prichozich, 'incoming');
+ prvek('panel-zpet').hidden = historiePanelu.length === 0;
 	const sbalit = prvek('panel-sbalit');
 	sbalit.hidden = !slozka || i === 0;
 	sbalit.textContent = sbalene.has(cesta[i]) ? texty.rozbalit : texty.sbalit;
@@ -1089,7 +1139,7 @@ function bodKrivky(ax: number, ay: number, cx: number, cy: number, bx: number, b
 	return [mt * mt * ax + 2 * mt * t * cx + t * t * bx, mt * mt * ay + 2 * mt * t * cy + t * t * by];
 }
 function kresliVyber(cas: number) {
-	const bezVyberu = () => { zasahyPopiskuVyberu = new Map(); uzlyPopiskuVyberu = []; klicVrstvyVyberu = ''; return false; };
+	const bezVyberu = () => { zasahyPopiskuVyberu = new Map<number, Obdelnik>(); uzlyPopiskuVyberu = []; klicVrstvyVyberu = ''; return false; };
 	if (vybrany < 0 || !vyberVazby) return bezVyberu();
 	const stred = poziceUzlu(vybrany);
 	if (!stred) return bezVyberu();
@@ -1099,7 +1149,7 @@ function kresliVyber(cas: number) {
 	ctx.fillRect(0, 0, sirka, vyska);
 	ctx.globalCompositeOperation = 'lighter';
 	ctx.lineCap = 'round';
-	const pozice = new Map();
+	const pozice = new Map<number, Viditelny>();
 	for (const v of viditelne) pozice.set(v.id, v);
 	const klic = vybrany + '|' + verzeStatiky;
 	if (klic !== klicVrstvyVyberu) {
@@ -1117,7 +1167,7 @@ function kresliVyber(cas: number) {
 		{ skupiny: seskupPodleKotvy(vyberVazby.ven), barva: paleta.ven, rgb: hexNaRgb(paleta.ven), odStredu: true },
 		{ skupiny: seskupPodleKotvy(vyberVazby.dovnitr), barva: paleta.dovnitr, rgb: hexNaRgb(paleta.dovnitr), odStredu: false }
 	];
-	const impulzy: any[] = [];
+	const impulzy: { ax: number; ay: number; cx: number; cy: number; bx: number; by: number; odStredu: boolean; pocet: number; rgb: number[]; barva: string; faze: number }[] = [];
 	for (const s of smery) {
 		const maxN = s.skupiny.length ? s.skupiny[0][1] : 1;
 		s.skupiny.slice(0, 400).forEach(([kotvaId, n], poradi) => {
@@ -1186,7 +1236,7 @@ function kresliHierarchii(c: CanvasRenderingContext2D, stred: Viditelny, pozice:
 }
 // Popisky výběru, rodiče a dětí nad ztlumením; co se nevejde vedle bodu bez překryvu, se vynechá.
 function kresliPopiskyVyberu(c: CanvasRenderingContext2D, uzly: Viditelny[]) {
-	zasahyPopiskuVyberu = new Map();
+	zasahyPopiskuVyberu = new Map<number, Obdelnik>();
 	const zabrane: number[][] = [], strop = sirka < 500 ? 10 : 24;
 	c.globalCompositeOperation = 'source-over';
 	c.globalAlpha = 1;
@@ -1223,11 +1273,11 @@ function naplanujSnimek() {
 let klicCelku = '', meritkoCelku = 1;
 function aktualizujCelek() {
  if (!fitHotov || !pohled3d && pohled3dAktivni) return;
- // během letu (2D let_, 3D přelet kamery) popisek stojí, konec letu ho aktualizuje sám (krokLetu → poTe, mozek3d krokPreletu) - B5 k4
+ // během letu (2D let_, 3D přelet kamery) popisek stojí, konec letu ho aktualizuje sám (krokLetu → poTe, mozek3d krokPreletu)
  if (let_ || pohled3dAktivni && pohled3d!.ladeni.leti) return;
  let detail = false;
  if (vybrany >= 0) {
-  // B5 k5 (r2 nález 2): Detail jen když jeho let viditelně změní záběr (detailZmeniZaber), jinak Overview a klik dělá Celek
+  // Detail jen když jeho let viditelně změní záběr (detailZmeniZaber), jinak Overview a klik dělá Celek
   if (pohled3dAktivni) detail = pohled3d!.jeCelek() && pohled3d!.detailZmeniZaber(vybrany);
   else {
    const klic = [sirka, vyska, natazeni, hloubkaZapnuta, pocet, ...sbalene].join('|');
@@ -1270,14 +1320,14 @@ function snimek(cas: number) {
 	zmerSnimek(zacatekSnimku);
 	if (dalsi) naplanujSnimek(); else smyckaBezi = false;
 }
-// měřidlo pro přejímku na zařízení: ms od vzniku instance do prvního snímku, ms prvního snímku po výběru, paměť kde je
+// měřidlo pro měření na zařízení: ms od vzniku instance do prvního snímku, ms prvního snímku po výběru, paměť kde je
 function zmerSnimek(zacatekSnimku: number) {
 	const ted = performance.now();
 	let zmena = false;
 	if (meridlo.prvniSnimekMs === null) { meridlo.prvniSnimekMs = ted - casVzniku; zmena = true; }
 	if (meridloCekaVyber) { meridloCekaVyber = false; meridlo.snimekVyberuMs = ted - zacatekSnimku; zmena = true; }
 	if (!zmena) return;
-	const pamet = okno.performance && (okno.performance as any).memory;
+	const pamet = okno.performance && (okno.performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
 	meridlo.pametMB = pamet && pamet.usedJSHeapSize ? pamet.usedJSHeapSize / 1048576 : null;
 	const casti = [texty.prvniSnimek(meridlo.prvniSnimekMs.toFixed(0))];
 	if (meridlo.snimekVyberuMs !== null) casti.push(texty.snimekVyberu(meridlo.snimekVyberuMs.toFixed(1)));
@@ -1297,18 +1347,18 @@ function cilLetu(u: number) {
 	let potrebnyK = pohled.k;
 	for (let a = rodic[u]; a >= 0; a = rodic[a]) if (rozestup[a] > 0) potrebnyK = Math.max(potrebnyK, (PRAH_ROZESTUPU * 2.2) / rozestup[a]);
 	if (typ[u] === 0 && rozestup[u] > 0) potrebnyK = Math.max(potrebnyK, (PRAH_ROZESTUPU * 1.6) / rozestup[u]);
-	// poznámka: aspoň měřítko, od kterého jí jádro kreslí popisek (přejímka P6 krok 8: let doletěl, ale nepřiblížil)
+	// poznámka: aspoň měřítko, od kterého jí jádro kreslí popisek 
 	if (typ[u] !== 0 && rozestup[rodic[u]] > 0) potrebnyK = Math.max(potrebnyK, kPopiskuListu(u));
 	const k = omezK(potrebnyK);
 	return { k, x: sirka / 2 - px[u] * k, y: vyska / 2 - py[u] * k };
 }
-// Detail (let na kotvu výběru) viditelně změní záběr (B5 k5, r2 nález 2): přiblíží nad Celek o víc než 1 % (tolerance popisku),
+// Detail (let na kotvu výběru) viditelně změní záběr : přiblíží nad Celek o víc než 1 % (tolerance popisku),
 // nebo posune kotvu do středu o víc než 1 % menšího rozměru plochy; posun bez perspektivy hloubky, jako cíl letu
 function detailZmeniZaber(i: number) {
 	const u = kotvaSbaleni(i), c = cilLetu(u);
 	return c.k > meritkoCelku * 1.01 || Math.hypot(px[u] * pohled.k + pohled.x - sirka / 2, py[u] * pohled.k + pohled.y - vyska / 2) > Math.min(sirka, vyska) * 0.01;
 }
-// zachovejVetve = Detail (B5): nerozbalí předky a míří na viditelného zástupce vybraného uzlu (B5 k4); výběr až po startu letu,
+// zachovejVetve = Detail (B5): nerozbalí předky a míří na viditelného zástupce vybraného uzlu ; výběr až po startu letu,
 // takže popisek Celek/Detail se během letu nemění
 function letNa(i: number, vyberHned = false, zachovejVetve = false) {
 	if (!zachovejVetve) {
@@ -1339,11 +1389,11 @@ function prerusLet() {
 	return preruseny;
 }
 function krokLetu(cas: number) {
-	const t = hladce(Math.min(1, (cas - let_.start) / let_.trvani));
-	const lnK = Math.log(let_.od.k) + (Math.log(let_.cil.k) - Math.log(let_.od.k)) * t;
-	pohled = { k: Math.exp(lnK), x: let_.od.x + (let_.cil.x - let_.od.x) * t, y: let_.od.y + (let_.cil.y - let_.od.y) * t };
+	const t = hladce(Math.min(1, (cas - let_!.start) / let_!.trvani));
+	const lnK = Math.log(let_!.od.k) + (Math.log(let_!.cil.k) - Math.log(let_!.od.k)) * t;
+	pohled = { k: Math.exp(lnK), x: let_!.od.x + (let_!.cil.x - let_!.od.x) * t, y: let_!.od.y + (let_!.cil.y - let_!.od.y) * t };
 	statikaSpinava = true;
-	if (t >= 1) { pohled = { ...let_.cil }; const hotovo = let_.poTe; let_ = null; kresliStatiku(); hotovo(); return false; }
+	if (t >= 1) { pohled = { ...let_!.cil }; const hotovo = let_!.poTe; let_ = null; kresliStatiku(); hotovo(); return false; }
 	return true;
 }
 
@@ -1351,7 +1401,7 @@ function krokLetu(cas: number) {
 // vybraný uzel, který v datech není = zůstane úvodní pohled (obnovPohled ho na hotové ploše vrátí). Stejně otočené a natažené
 // rozložení: jiný rozměr drží střed plochy nad týmž bodem mapy. Jinak otočené či natažené rozložení (srovnejOrientaci podle plochy:
 // uložený posun souřadnicím uzlů neodpovídá): výběr a měřítko zůstanou, vybraný uzel se hned vystředí, bez výběru se měřítko změní
-// kolem středu plochy (Codex xcheck P6 k1, nález 1)
+// kolem středu plochy 
 function pouzijStavPohledu(stav: StavPohledu) {
 	const i = stav.vybrany === null ? -1 : cesta.indexOf(stav.vybrany);
 	if (stav.vybrany !== null && i < 0) return false;
@@ -1374,8 +1424,8 @@ function stavPohledu(): StavPohledu | null {
 	return { x: pohled.x, y: pohled.y, k: pohled.k, sirka: plochaPohledu[0], vyska: plochaPohledu[1], natazeni, vybrany: vybrany >= 0 ? cesta[vybrany] : null, ...(pohled3dAktivni ? { rezim: '3d' as const, ...(pohled3d?.stavKamery() ? { kamera3d: pohled3d.stavKamery()! } : {}) } : {}) };
 }
 // neplatný nebo cizí objekt se ignoruje (pohled zůstane); platný stav s cestou, která v datech není, zahodí čekající stav, let
-// i výběr a vrátí úvodní pohled: na hotové ploše hned, jinak s první plochou (Codex xcheck P6 k1, nález 2). Platný stav na pozastavené
-// ploše nebo ploše bez rozměru počká na první fit s plochou, jinak by se vystředil vůči nulové šířce (Codex xcheck P6 k2, N4)
+// i výběr a vrátí úvodní pohled: na hotové ploše hned, jinak s první plochou . Platný stav na pozastavené
+// ploše nebo ploše bez rozměru počká na první fit s plochou, jinak by se vystředil vůči nulové šířce 
 function obnovPohled(stav: unknown) {
 	if (zniceno) return;
 	const platny = platnyStavPohledu(stav);
@@ -1411,21 +1461,22 @@ function dvojitaAkce(i: number) {
 	if (typ[i] === 0) prepniSbaleni(i); else otevriVObsidianu(i);
 }
 // bod události v souřadnicích plátna: v Obsidianu plátno nezačíná v rohu okna (odsazený nebo rozdělený pohled)
-function bodPlatna(e: any) {
+function bodPlatna(e: MouseEvent) {
 	const obdelnik = platno.getBoundingClientRect();
 	return [e.clientX - obdelnik.left, e.clientY - obdelnik.top];
 }
 function zrusDrzeni() { if (casovacDrzeni) { okno.clearTimeout(casovacDrzeni); casovacDrzeni = null; } }
 // dotyk u svislého okraje obrazovky (ne kořene: v rozděleném pohledu je okraj listu uvnitř obrazovky) patří hostiteli; myš a pero ne
-function uOkrajeObrazovky(e: any) {
+function uOkrajeObrazovky(e: PointerEvent) {
 	if (e.pointerType !== 'touch') return false;
 	const sirkaOkna = okno.innerWidth || 0;
 	return sirkaOkna > 0 && (e.clientX < OKRAJ_OBSIDIANU || e.clientX > sirkaOkna - OKRAJ_OBSIDIANU);
 }
-// klávesnice na telefonu (přejímka A4 4b): když visualViewport (překryvná klávesnice, iOS) odkryje jen část kořene, kořen dostane
+// klávesnice na telefonu : když visualViewport (překryvná klávesnice, iOS) odkryje jen část kořene, kořen dostane
 // třídu klavesnice a proměnné --mozek-vrch-viditelne / --mozek-vyska-viditelne; CSS tím posune lištu hledání do viditelné části
 // a zkrátí seznam výsledků. Viditelnou část si jádro drží i pro sledujKlavesnici (zmenšený list na Androidu je celý viditelný).
 function prepocitejViditelnouCast() {
+ if (!prvek('panel-menu').hidden) zmerMenuPanelu();
 	const vv = okno.visualViewport;
 	if (zniceno || !vv) return;
 	const obdelnik = koren.getBoundingClientRect();
@@ -1442,7 +1493,7 @@ function prepocitejViditelnouCast() {
 		koren.style.removeProperty('--mozek-vyska-viditelne');
 	}
 }
-// Klávesnice je dočasné zakrytí plochy, ne nová plocha (P7, přejímka P6 krok 3). Android při ní zmenší okno, tedy i list (na telefonu
+// Klávesnice je dočasné zakrytí plochy, ne nová plocha . Android při ní zmenší okno, tedy i list (na telefonu
 // z mezizkoušky až na ~18 px výšky, víc než o klávesnici), iOS jen visualViewport. Dřív to ResizeObserver bral jako novou plochu:
 // srovnejOrientaci přepočítala natažení a otočení, prizpusobPohled napasoval mapu do plochy pod lištou, která v nízkém listu neexistuje
 // (max(1, výška − lišta − okraje) = 1 px), měřítko i kFit iterací spadly k nule (4e-31) a mapa zmizela; po zavření nový fit zahodil
@@ -1450,7 +1501,7 @@ function prepocitejViditelnouCast() {
 // nemění a plátno se jen posune, aby střed plochy (kam míří úvodní pohled, let i perspektiva) ležel ve středu viditelné části.
 // Začátek: plocha zakrytá o víc než PRAH_KLAVESNICE při stejné šířce, fokusu v textovém poli mapy (hledání; fokus v editoru jiného
 // panelu by na PC zmrazil plochu při obyčejném zmenšení listu) a poklesu okna nebo visualViewportu o víc než PRAH_KLAVESNICE proti
-// ploše bez klávesnice (P7 k2, F1: zmenšení panelu při fokusu v hledání okno nemění a je to nová plocha). Konec: okno i viewport zpět
+// ploše bez klávesnice . Konec: okno i viewport zpět
 // (nebo kořen na plné výšce bez zakrytí), jiná šířka bez otočení okna, nulová plocha; ověřuje se i po focusout z pole mapy a po změně
 // viditelnosti listu (klávesnice zavřená bez události viewportu). Nezakrytá plocha přežije skrytí listu (návrat během klávesnice ji
 // převezme zpět) a otočení okna s klávesnicí z ní odvodí novou (F2). Vrací 'klavesnice' (rozměr se nezpracuje), 'drzena' (plátno drží
@@ -1480,7 +1531,7 @@ function vyskaKlavesniceHostitele() {
 	}
 	return 0;
 }
-// časovač kontroly držení (P7 k3): běží jen během držení na viditelném listu; zastaví ho uvolnění, pauza (skrytí) a destroy
+// časovač kontroly držení : běží jen během držení na viditelném listu; zastaví ho uvolnění, pauza (skrytí) a destroy
 function spustKontroluDrzeni() {
 	if (kontrolaDrzeni !== null || zniceno || pozastaveno || !plochaPredKlavesnici) return;
 	kontrolaDrzeni = okno.setInterval(() => {
@@ -1493,8 +1544,8 @@ function zastavKontroluDrzeni() {
 }
 function drzPlochu(s: number, v: number) {
 	plochaPredKlavesnici = true;
-	platno.style.width = `${s}px`;
-	platno.style.height = `${v}px`;
+	setCssStyles(platno, { width: `${s}px` });
+	setCssStyles(platno, { height: `${v}px` });
 	spustKontroluDrzeni();
 }
 function pustPlochu() {
@@ -1504,10 +1555,10 @@ function pustPlochu() {
 }
 // střed držené plochy do středu viditelné části kořene; bez držení nic
 function posunPlatna() {
-	if (plochaPredKlavesnici) platno.style.transform = `translateY(${Math.round(viditelnaCast.vrch + viditelnaCast.vyska / 2 - vyska / 2)}px)`;
+	if (plochaPredKlavesnici) setCssStyles(platno, { transform: `translateY(${Math.round(viditelnaCast.vrch + viditelnaCast.vyska / 2 - vyska / 2)}px)` });
 	for (const nazev of ['platno3d', 'popisky3d']) {
 		const c = prvek(nazev);
-		for (const vlastnost of ['width', 'height', 'transform']) c.style[vlastnost] = platno.style[vlastnost];
+		for (const vlastnost of ['width', 'height', 'transform']) setCssStyles(c, { [vlastnost]: platno.style[vlastnost as 'width' | 'height' | 'transform'] });
 	}
 }
 function sledujKlavesnici(): 'klavesnice' | 'drzena' | 'konec' | 'ne' {
@@ -1520,7 +1571,7 @@ function sledujKlavesnici(): 'klavesnice' | 'drzena' | 'konec' | 'ne' {
 		return 'konec';
 	}
 	const pokles = poklesOkna(), zKlavesnice = pokles > PRAH_KLAVESNICE;
-	// P7 k3 (Codex xcheck P7 k2 bod 2): Obsidian může list zmenšit jen paddingem bez poklesu okna i viewportu; klávesnicí je pak pokles
+	// Obsidian může list zmenšit jen paddingem bez poklesu okna i viewportu; klávesnicí je pak pokles
 	// kořene stejné šířky o víc než PRAH_KLAVESNICE při kladném --keyboard-height (panel s nulovou hodnotou zůstává nová plocha, F1)
 	const zHostitele = !zKlavesnice && sirkaKorene === sirka && vyska - vyskaKorene > PRAH_KLAVESNICE ? vyskaKlavesniceHostitele() : 0;
 	const jmenovatel = zKlavesnice ? pokles : zHostitele;   // pomer na px poklesu okna nebo výšky klávesnice, nikdy nula
@@ -1571,7 +1622,7 @@ function prevezmiRozmer() {
 	if (!fitHotov) { prvniFit(); return; }
 	const zmenaRozlozeni = srovnejOrientaci();
 	if (!zmenaRozlozeni && sirka === puvodniSirka && vyska === puvodniVyska) { pohled3d?.obnovVelikost(); return; }
-	// Cíl letu ještě patří původní ploše. Dokončení musí vybrat výsledek hledání dřív, než převedeme jeho střed (P9 k2).
+	// Cíl letu ještě patří původní ploše. Dokončení musí vybrat výsledek hledání dřív, než převedeme jeho střed .
 	if (let_) {
 		const dokoncenyLet = let_;
 		let_ = null;
@@ -1601,10 +1652,10 @@ function poZmeneViewportu() {
 	posunPlatna();
 }
 // každý posluchač jde přes předanou registraci a do seznamu instance, aby ho destroy() odebral i bez hostitele
-function naslouchej(cil: EventTarget, typ: string, fn: (udalost: any) => void, dalsi?: AddEventListenerOptions) { posluchace.push({ cil, typ, fn, volby: dalsi }); registruj(cil, typ, fn, dalsi); }
+function naslouchej<K extends keyof GlobalEventHandlersEventMap>(cil: EventTarget, typ: K, fn: (udalost: GlobalEventHandlersEventMap[K]) => void, dalsi?: AddEventListenerOptions) { posluchace.push({ cil, typ, fn: fn as EventListener, volby: dalsi }); registruj(cil, typ, fn as EventListener, dalsi); }
 function napojOvladani() {
-	const ukazatele = new Map();
-	let tazeni = false, start: any = null, sevreni: any = null, posledniTap = { cas: 0, x: 0, y: 0, uzel: -1 };
+	const ukazatele = new Map<number, { x: number; y: number }>();
+	let tazeni = false, start: { x: number; y: number; px: number; py: number; prerusenyLet?: Let2d | null } | null = null, sevreni: { d: number; k: number; sx: number; sy: number; px: number; py: number } | null = null, posledniTap = { cas: 0, x: 0, y: 0, uzel: -1 };
 	zrusGesto = () => { posledniTap.cas = 0; ukazatele.clear(); start = null; sevreni = null; tazeni = false; platno.classList.remove('tahnu'); };   // pointerup po pauze pak nic nevybere
 	naslouchej(platno, 'pointerdown', (e) => {
 		if (e.button !== 0) return;   // jen primární tlačítko: dotyk a hrot pera mají 0, pravé a prostřední myši i tlačítko pera ne (review B3d r2)
@@ -1645,7 +1696,7 @@ function napojOvladani() {
 			if (tazeni) { pohled.x = start.px + dx; pohled.y = start.py + dy; zneplatniStatiku(); }
 		}
 	});
-	const konec = (e: any) => {
+	const konec = (e: PointerEvent) => {
 		if (!ukazatele.has(e.pointerId)) return;
 		if (e.type === 'pointercancel') posledniTap.cas = 0;
 		ukazatele.delete(e.pointerId);
@@ -1657,7 +1708,7 @@ function napojOvladani() {
 				const [x, y] = bodPlatna(e);
 				const dvojity = posledniTap.uzel >= 0 && posledniTap.cas > 0 && ted - posledniTap.cas < 350 && Math.hypot(x - posledniTap.x, y - posledniTap.y) < 24;
 				const i = zasah(x, y);
-				if (dvojity) { let_ = start.prerusenyLet; if (let_) pozadujSnimek(); dvojitaAkce(posledniTap.uzel); posledniTap = { cas: 0, x: 0, y: 0, uzel: -1 }; }
+				if (dvojity) { let_ = start.prerusenyLet!; if (let_) pozadujSnimek(); dvojitaAkce(posledniTap.uzel); posledniTap = { cas: 0, x: 0, y: 0, uzel: -1 }; }
 				else { if (i >= 0) letNa(i, true); else vyber(-1); posledniTap = { cas: ted, x, y, uzel: i }; }
 			}
 			start = null; sevreni = null; tazeni = false;
@@ -1679,7 +1730,7 @@ function napojOvladani() {
 	}, { passive: false });
 	naslouchej(platno, 'dblclick', (e) => e.preventDefault());
 	// překryvná klávesnice: visualViewport hlásí zmenšení a posun viditelné části; posluchače jdou přes registraci jako ostatní.
-	// Přepočet hned po připojení (Codex k1 B3): instance může vzniknout nad už zmenšeným viewportem (list otevřený s klávesnicí)
+	// Přepočet hned po připojení : instance může vzniknout nad už zmenšeným viewportem (list otevřený s klávesnicí)
 	// a žádná událost by pak nepřišla
 	// konec klávesnice hlášený viewportem zpracuje rozměr hned (poZmeneViewportu)
 	if (okno.visualViewport) {
@@ -1688,7 +1739,7 @@ function napojOvladani() {
 	}
 	prepocitejViditelnouCast();   // stav při připojení
 	// rozměry z kontejneru pohledu (observer na něm), ne z okna: změna velikosti panelu, skrytí listu (nulová plocha) i návrat; viditelnost listu navíc hlásí hostitel (nastavViditelnost).
-	// Změna geometrie kořene mění i jeho viditelnou část (Codex k1 B3): kořen zmenšený na plně viditelnou výšku bez události viewportu musí třídu klavesnice a posun odložit
+	// Změna geometrie kořene mění i jeho viditelnou část : kořen zmenšený na plně viditelnou výšku bez události viewportu musí třídu klavesnice a posun odložit
 	// Klávesnice (sledujKlavesnici) se pozná dřív, než se rozměr převezme: zmenšení kvůli ní plochu nemění.
 	function poZmeneVelikosti() {
 		prepocitejViditelnouCast();
@@ -1697,11 +1748,11 @@ function napojOvladani() {
 	}
 	pozorovatel = new okno.ResizeObserver(poZmeneVelikosti);
 	pozorovatel.observe(kontejner);
-	// fokus opustil pole mapy: držení plochy se ověří znovu, klávesnice se mohla zavřít bez události viewportu (P7 k2, F1)
+	// fokus opustil pole mapy: držení plochy se ověří znovu, klávesnice se mohla zavřít bez události viewportu 
 	naslouchej(koren, 'focusout', () => { if (plochaPredKlavesnici) poZmeneViewportu(); });
 	// Escape jen z pohledu (plátno má tabindex, hledání je uvnitř kořene), ne z celého dokumentu
 	naslouchej(koren, 'keydown', (e) => {
-		if (e.key === 'Escape') { if (!prvek('vysledky').hidden) zavriVysledky(); else vyber(-1); }
+		if (e.key === 'Escape') { if (!prvek('panel-menu').hidden) { zavriMenuPanelu(); e.stopPropagation(); } else if (!prvek('vysledky').hidden) zavriVysledky(); else vyber(-1); }
 	});
 }
 
@@ -1720,11 +1771,11 @@ function hledej(dotaz: string) {
 	}
 	shody.sort((a, b) => a.skore - b.skore);
 	seznam.replaceChildren();
-	if (!shody.length) { const li = dokument.createElement('li'); li.className = 'prazdne'; li.textContent = texty.nicNenalezeno; seznam.append(li); }
+	if (!shody.length) { const li = vytvorPrvek(dokument, 'li'); li.className = 'prazdne'; li.textContent = texty.nicNenalezeno; seznam.append(li); }
 	for (const { i } of shody.slice(0, 12)) {
-		const li = dokument.createElement('li');
-		const nazev = dokument.createElement('span'); nazev.className = 'nazev'; nazev.textContent = (typ[i] === 0 ? '▣ ' : '· ') + jmeno[i];
-		const cestaEl = dokument.createElement('span'); cestaEl.className = 'cesta'; cestaEl.textContent = cesta[i];
+		const li = vytvorPrvek(dokument, 'li');
+		const nazev = vytvorPrvek(dokument, 'span'); nazev.className = 'nazev'; nazev.textContent = (typ[i] === 0 ? '▣ ' : '· ') + jmeno[i];
+		const cestaEl = vytvorPrvek(dokument, 'span'); cestaEl.className = 'cesta'; cestaEl.textContent = cesta[i];
 		li.append(nazev, cestaEl);
 		li.dataset.uzel = String(i);
 		seznam.append(li);
@@ -1733,6 +1784,30 @@ function hledej(dotaz: string) {
 }
 
 // --- UI ---
+function napojMenuPanelu() {
+ naslouchej(koren, 'keydown', (e) => {
+  if (e.key === 'Escape' && !prvek('panel-menu').hidden) { e.preventDefault(); e.stopPropagation(); zavriMenuPanelu(); }
+  else if (e.key.toLowerCase() === 'r') zavriMenuPanelu();
+ }, { capture: true });
+ naslouchej(koren, 'focusout', (e) => { if (e.relatedTarget && !koren.contains(e.relatedTarget as Node)) zavriMenuPanelu(); });
+ naslouchej(koren, 'pointerdown', (e) => { if (!(e.target as Element).closest('.mozek-panel-menu, .panel-cisla')) zavriMenuPanelu(); }, { capture: true });
+ naslouchej(prvek('panel-cisla'), 'click', (e) => {
+  const tlacitko = (e.target as Element).closest<HTMLButtonElement>('button[data-seznam]');
+  if (tlacitko && !tlacitko.disabled) otevriMenuPanelu(tlacitko.dataset.seznam!);
+ });
+ naslouchej(prvek('panel-menu'), 'click', (e) => {
+  const tlacitko = (e.target as Element).closest<HTMLButtonElement>('button[data-uzel]');
+  if (tlacitko) letZPanelu(Number(tlacitko.dataset.uzel));
+ });
+ naslouchej(prvek('panel-zpet'), 'click', () => {
+  let predchozi: string | undefined;
+  while ((predchozi = historiePanelu.pop()) !== undefined) {
+   const i = cesta.indexOf(predchozi);
+   if (i >= 0) { letZPanelu(i, true); return; }
+  }
+  naplnPanel();
+ });
+}
 function napojUI() {
 	if (volby.obnov) naslouchej(prvek('obnovit'), 'click', () => volby.obnov?.());
 	const nastaveni = prvek('nastaveni'), tlacitko = prvek('nastaveni-tlacitko');
@@ -1757,16 +1832,16 @@ function napojUI() {
 	naslouchej(paleta, 'change', () => { paletaIdx = Number(paleta.value) || 0; uloz(KLIC.paleta, String(paletaIdx)); obarvi(); zneplatniStatiku(); });
 	const hledat = prvek('hledat');
 	naslouchej(hledat, 'input', () => hledej(hledat.value));
-	// jeden delegovaný posluchač na seznamu (Codex k1): položky se s každým dotazem vyměňují a registrace na každé z nich by u hostitele i v seznamu instance zůstala až do destroy
+	// jeden delegovaný posluchač na seznamu : položky se s každým dotazem vyměňují a registrace na každé z nich by u hostitele i v seznamu instance zůstala až do destroy
 	naslouchej(prvek('vysledky'), 'click', (e) => {
 		const cilKliku = e.target as Element | null;
-		const polozka = cilKliku && typeof cilKliku.closest === 'function' ? (cilKliku.closest('li[data-uzel]') as HTMLElement | null) : null;
+		const polozka = cilKliku && typeof cilKliku.closest === 'function' ? (cilKliku.closest<HTMLElement>('li[data-uzel]')) : null;
 		if (!polozka) return;
 		zavriVysledky(); prvek('hledat').value = ''; letNa(Number(polozka.dataset.uzel));
 	});
 	naslouchej(hledat, 'focus', () => { if (hledat.value) hledej(hledat.value); });
 	naslouchej(hledat, 'keydown', (e) => {
-		if (e.key === 'Enter') { const prvni = prvek('vysledky').querySelector('li:not(.prazdne)'); if (prvni) prvni.click(); }
+		if (e.key === 'Enter') { const prvni = prvek('vysledky').querySelector<HTMLElement>('li:not(.prazdne)'); if (prvni) prvni.click(); }
 	});
 	naslouchej(prvek('panel-zavrit'), 'click', () => vyber(-1));
 	naslouchej(prvek('panel-zrusit'), 'click', () => vyber(-1));
@@ -1777,11 +1852,12 @@ function napojUI() {
 	const krouzeni = prvek('krouzeni');
 	krouzeni.checked = nacti(KLIC.krouzeni) !== '0';
 	naslouchej(krouzeni, 'change', () => { uloz(KLIC.krouzeni, krouzeni.checked ? '1' : '0'); if (pohled3d) pohled3d.nastavKrouzeni(krouzeni.checked); });
-	naslouchej(prvek('celek'), 'click', () => { if (vybrany >= 0 && prvek('celek').textContent === texty.detail) { letNa(vybrany, false, true); return; } if (pohled3dAktivni) pohled3d!.celek(); else celek2d(); });
+	naslouchej(prvek('celek'), 'click', () => { zavriMenuPanelu(); if (vybrany >= 0 && prvek('celek').textContent === texty.detail) { letNa(vybrany, false, true); return; } if (pohled3dAktivni) pohled3d!.celek(); else celek2d(); });
 }
 // Přepínač pohledu: 3D jen když je WebGL; bez něj (nebo po neobnovené ztrátě kontextu) zůstane tlačítko neaktivní s důvodem.
 // Návrat s výběrem používá stejný let jako klik ve 2D, až po převzetí rozměru plochy.
 function nastavPohled(rezim: string, ulozit = true, centruj = true) {
+ zavriMenuPanelu();
 	const tri = rezim === '3d' && pohled3d && pohled3d.podporovano;
 	if (tri && !pohled3dAktivni) { zrusSnimek(); let_ = null; pohled3dAktivni = true; koren.classList.add('pohled-3d'); pohled3d!.zapni(); }
 	else if (!tri && pohled3dAktivni) { pohled3dAktivni = false; pohled3d!.vypni(); koren.classList.remove('pohled-3d'); prevezmiRozmer(); if (centruj && vybrany >= 0 && !pozastaveno) letNa(vybrany, true); statikaSpinava = true; pozadujSnimek(); }
@@ -1814,7 +1890,7 @@ function jadroPro3d() {
 		infoZavislosti: (text: string) => { prvek('zavislosti-info').textContent = text; },
 		hlaska: (text: string) => { stav.classList.remove('chyba'); stav.textContent = text || ''; stav.hidden = !text; },
 		vypadek3d, oznacPodporu3d, zmerSnimek, aktualizujCelek, texty,
-		platno3d: prvek('platno3d') as HTMLCanvasElement, popisky3d: prvek('popisky3d') as HTMLCanvasElement,
+		platno3d: prvek('platno3d'), popisky3d: prvek('popisky3d'),
 		registruj, rozmery: (): [number, number] => [sirka, vyska], jePozastaveno: () => pozastaveno, uOkrajeObrazovky
 	};
 }
@@ -1833,7 +1909,7 @@ function prestavStruktury() {
 	pripravStruktury(zdrojovaData);
 	rozloz(); obarvi(); srovnejOrientaci();
 	kotva = null; zavislostiCache = null; verzeViditelnosti = 0;
-	viditelne = []; individualni = null;
+	viditelne = []; individualni = null!;
 	zasahyPopisku.clear(); zasahyPopiskuVyberu.clear(); uzlyPopiskuVyberu = [];
 	vyber(vybranaCesta === null ? -1 : cesta.indexOf(vybranaCesta));
 	if (pohled3d) pohled3d.zmenData(jadroPro3d());
@@ -1849,7 +1925,7 @@ function nastavHloubku(zapnout: boolean) {
 function nactiVolby() {
 	const p = Number(nacti(KLIC.paleta));
 	paletaIdx = Number.isInteger(p) && p >= 0 && p < PALETY.length ? p : 0;
-	try { const s = JSON.parse(nacti(KLIC.sbalene) || '[]'); if (Array.isArray(s)) sbalene = new Set(s.filter((x) => typeof x === 'string')); } catch { sbalene = new Set(); }
+	try { const s: unknown = JSON.parse(nacti(KLIC.sbalene) || '[]'); if (Array.isArray(s)) sbalene = new Set(s.filter((x) => typeof x === 'string')); } catch { sbalene = new Set(); }
 	zavislostiZapnute = nacti(KLIC.zavislosti) === '1';
 	hloubkaZapnuta = nacti(KLIC.hloubka) !== '0';
 	ostatniZapnute = nacti(KLIC.ostatni) === '1';
@@ -1867,7 +1943,7 @@ function prvniFit() {
 	pozadujSnimek();
 }
 // obsluhy (ukazatele, observer, UI) se napojí jen jednou za život instance: první start nad neplatnými daty je nenapojí a nastavData
-// je pak napojí s prvním úspěšným startem, bez duplicit (Codex k1). Napojení je transakce (Codex k2): když registrace uprostřed
+// je pak napojí s prvním úspěšným startem, bez duplicit . Napojení je transakce : když registrace uprostřed
 // vyhodí (hostitel, chybějící prvek), už přidané posluchače a observer se odeberou a příznak zůstane dole, příští start napojí znovu
 function napojObsluhy() {
 	if (obsluhyNapojeny) return;
@@ -1875,6 +1951,7 @@ function napojObsluhy() {
 	try {
 		napojOvladani();
 		napojUI();
+		napojMenuPanelu();
 	} catch (chyba) {
 		odpojObsluhy(napojenoPred);
 		throw chyba;
@@ -1919,16 +1996,16 @@ function start(vstup: DataMapy) {
 			get otoceno() { return otoceno; }, get natazeni() { return natazeni; }, get hlavniVetve() { return potomci[0].filter((d) => typ[d] === 0); },
 			get hloubka() { return hloubkaZapnuta; }, nastavHloubku, get vybrany() { return vybrany; },
 			zasah, poziceUzlu, promitni: (i: number) => { const s = meritkoZ(i); return { xy: naObrazovku(px[i], py[i], s), z: zet[i], s }; },
-			get hloubky() { return Array.from(hloubka); }, get typy() { return Array.from(typ); }, get polomery() { const r = new Array(pocet); for (let i = 0; i < pocet; i++) r[i] = Math.hypot(pxZakl[i], pyZakl[i]); return r; },
+			get hloubky() { return Array.from(hloubka); }, get typy() { return Array.from(typ); }, get polomery() { const r = new Array<number>(pocet); for (let i = 0; i < pocet; i++) r[i] = Math.hypot(pxZakl[i], pyZakl[i]); return r; },
 			get cesty() { return cesta; }, get pozice() { return [Array.from(px), Array.from(py), Array.from(zet)]; }, prepinace: ladeniPrepinace, vyber, letNa, priblizK, pripraveno: true,
 			get rezim() { return pohled3dAktivni ? '3d' : '2d'; }, nastavPohled, get pohled3d() { return pohled3d ? pohled3d.ladeni : null; }, get podpora3d() { return pohled3d ? { podporovano: pohled3d.podporovano, duvod: pohled3d.duvodNepodpory } : null; },
 			get sbalene() { return [...sbalene]; },
 			get rozmery() { return [sirka, vyska]; }, get pozastaveno() { return pozastaveno; }, get nezakryta() { return nezakryta ? { ...nezakryta } : null; }, get meridlo() { return { ...meridlo }; }
 		};
-	} catch (chyba: any) {
+	} catch (chyba: unknown) {
 		stav.hidden = false;
 		stav.classList.add('chyba');
-		stav.textContent = texty.nacteniSelhalo(chyba.message);
+		stav.textContent = texty.nacteniSelhalo((chyba as Error).message);
 	}
 }
 // nová data (Obnovit v B2, změna vaultu): strom, rozložení a barvy se přestaví ve stejné instanci, volby, pohled i DOM zůstanou;
@@ -1942,7 +2019,7 @@ function nastavData(novaData: DataMapy) {
 }
 // volby zvenku (B2 nastavení) pod týmiž klíči mozek.* jako hodnoty při vzniku; null klíč zapomene; hostiteli se nic nehlásí,
 // změna Ostatních souborů přestaví strom, ostatní volby jen přebarví nebo překreslí. Hodnoty se uloží i před úspěšným startem
-// (Codex k2): do UI a struktur se promítnou až s ním (start čte hodnoty přes nactiVolby)
+// : do UI a struktur se promítnou až s ním (start čte hodnoty přes nactiVolby)
 function nastavVolby(zmeny: Readonly<Record<string, string | null>>) {
 	if (zniceno) return;
 	for (const [klic, hodnota] of Object.entries(zmeny)) { if (hodnota === null || hodnota === undefined) delete hodnoty[klic]; else hodnoty[klic] = String(hodnota); }
@@ -1958,7 +2035,7 @@ function nastavVolby(zmeny: Readonly<Record<string, string | null>>) {
 	if (Object.prototype.hasOwnProperty.call(zmeny, KLIC.pohled)) nastavPohled(nacti(KLIC.pohled) === '3d' ? '3d' : '2d', false);
 	zneplatniStatiku();
 }
-// událost resolved v Obsidianu: jen vazby, strom a rozložení zůstanou (dev-brief, Edge cases); po destroy nic
+// událost resolved v Obsidianu: jen vazby, strom a rozložení zůstanou ; po destroy nic
 function nastavVazby(links: Vazba[]) {
 	if (zniceno || !zdrojovaData || !indexyZdroje) return;
 	if (JSON.stringify(zdrojovaData.links) === JSON.stringify(links)) return;
@@ -1976,7 +2053,7 @@ function destroy() {
 	for (const p of posluchace) p.cil.removeEventListener(p.typ, p.fn, p.volby);
 	posluchace.length = 0;
 	zrusDrzeni();
-	zastavKontroluDrzeni();   // časovač kontroly držení (P7 k3)
+	zastavKontroluDrzeni();   // časovač kontroly držení 
 	zrusSnimek(); let_ = null;
 	if (pozorovatel) { pozorovatel.disconnect(); pozorovatel = null; }
 	pohled3d?.destroy();

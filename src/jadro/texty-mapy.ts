@@ -25,6 +25,8 @@ export interface TextyMapy {
 	napoveda3d: string;
 	nacitam: string;
 	zrusitVyber: string;
+	zpet: string;
+	dalsich(pocet: number): string;
 	sbalit: string;
 	rozbalit: string;
 	otevritPoznamku: string;
@@ -74,6 +76,8 @@ export function vychoziTextyMapy(): TextyMapy {
   napoveda3d: 'Dragging rotates, two fingers zoom and pan (on PC the wheel, right button or Shift + drag). Tapping a point selects it and flies to it, tapping empty space clears the selection. Keys: R overview, F to selected, Esc clear, WASD + Q/E fly (Shift faster).',
   nacitam: 'Loading map…',
   zrusitVyber: 'Clear selection',
+  zpet: 'Back',
+  dalsich: (pocet) => `and ${pocet} more`,
   sbalit: 'Collapse',
   rozbalit: 'Expand',
   otevritPoznamku: 'Open note',

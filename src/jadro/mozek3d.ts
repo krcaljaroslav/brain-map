@@ -1,10 +1,19 @@
+import { vytvorPrvek } from '../dom-prvky.ts';
 import { vychoziTextyMapy } from './texty-mapy.ts';
+type Vektor3 = [number, number, number];
+type Rozlozeni3d = ReturnType<ReturnType<typeof modul3d>['rozlozZ2d']>;
+type Geometrie3d = ReturnType<ReturnType<typeof modul3d>['sestavGeometrii']>;
+type Program3d = { program: WebGLProgram; atributy: string[]; u: Record<string, WebGLUniformLocation | null> };
+interface Obdelnik { x0: number; y0: number; x1: number; y1: number }
+interface MistoPopisku { x: number; y: number; velikost: number; pismo: string; w: number }
+type Volno = (x0: number, y0: number, x1: number, y1: number) => boolean;
+interface Let3d { start: number; trvani: number; odKam: number[]; doKam: number[]; odCile: number[]; doCile: number[]; poTe: (() => void) | null; orientace: { osa: number[]; uhel: number }; odD: number; doD: number; bezpecnaD: number; konecPuvodni: number; lokalniNahoru: number[]; t?: number; navaz: { t0: number; cil: number[]; d: number } }
 export interface Kamera3d { kam: number[]; cil: number[]; nahoru: number[] }
 
 // Historie listu nesmí dodat NaN, extrémní souřadnice ani degenerovanou bázi kamery.
-export function platnaKamera3d(stav: any): Kamera3d | null {
+export function platnaKamera3d(stav: unknown): Kamera3d | null {
  if (!stav || typeof stav !== 'object') return null;
- const { kam, cil, nahoru } = stav;
+ const { kam, cil, nahoru } = stav as Kamera3d;
  if (![kam, cil, nahoru].every(v => Array.isArray(v) && v.length === 3 && v.every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e7))) return null;
  const smer = kam.map((n: number, i: number) => n - cil[i]);
  const d = Math.hypot(...smer), u = Math.hypot(...nahoru);
@@ -17,15 +26,24 @@ export function platnaKamera3d(stav: any): Kamera3d | null {
 export interface Jadro3d {
 	platno3d: HTMLCanvasElement;
 	popisky3d: HTMLCanvasElement;
-	registruj(cil: EventTarget, typ: string, fn: (e: any) => void, volby?: AddEventListenerOptions): void;
+	registruj: import('./mapa.ts').RegistracePosluchace;
 	rozmery(): [number, number];
-	jePozastaveno(): boolean;
+	jePozastaveno(): boolean; jeTelefon(): boolean;
 	uOkrajeObrazovky(e: PointerEvent): boolean;
-	[vlastnost: string]: any;
+	pocet: number; rodic: Int32Array; typ: Uint8Array; vaha: Float64Array; jmeno: string[]; cesta: string[]; hloubka: Int32Array; potomci: number[][];
+ px: Float64Array; py: Float64Array; smer: Float64Array; tloustka: Float64Array; barvaRgb: number[][]; rozestup: Float64Array; vetev: Int32Array;
+ otoceno: boolean; natazeni: number; sbalene: Set<string>; vybrany: number; vazby: number[][]; zavislostiZapnute: boolean;
+ paleta: { ven: string; dovnitr: string; vazba: string }; texty?: import('./texty-mapy.ts').TextyMapy;
+ MAX_KRIVEK: number; POPISEK_OD: number; PREHLED_DO: number; MAX_POPISKU: number; RUST_POPISKU_SE_ZOOMEM: number; PRAH_ROZESTUPU: number; rozpocetPopiskuZaklad(w: number, h: number): number; promitni2d(i: number): number[];
+ odchylka(this: void, text: string, sul: string): number; hexNaRgb(hex: string): number[]; rgbNaCss(rgb: number[], alfa: number): string;
+ vazbyUzlu(i: number): { ven: Map<number, number>; dovnitr: Map<number, number> };
+ velikostPopisku(i: number): number; pismoPopisku(i: number, velikost: number): string; sirkaTextu(c: CanvasRenderingContext2D, text: string, pismo: string): number;
+ vypadek3d(duvod?: string): void; oznacPodporu3d(): void; hlaska(text: string | null): void; infoZavislosti(text: string): void;
+ zavriVysledky(): void; vyber(i: number): void; aktualizujCelek?(): void; zmerSnimek?(zacatek: number): void;
 }
-export function vytvorPohled3d(jadro: Jadro3d) { return modul3d().tovarna(jadro); }
-export function rozlozZ2d(jadro: any) { return modul3d().rozlozZ2d(jadro); }
-export function sestavGeometrii(jadro: any, rozlozeni: any) { return modul3d().sestavGeometrii(jadro, rozlozeni); }
+export function vytvorPohled3d(jadro: unknown) { return modul3d().tovarna(jadro as Jadro3d); }
+export function rozlozZ2d(jadro: Jadro3d) { return modul3d().rozlozZ2d(jadro); }
+export function sestavGeometrii(jadro: Jadro3d, rozlozeni: Rozlozeni3d) { return modul3d().sestavGeometrii(jadro, rozlozeni); }
 // 3D pohled mapy Mozek (druhý, přepínatelný pohled vedle 2D). Rozložení je odvozené z hotového 2D neuronu: x a y bere z 2D
 // rozložení (stejné měřítko a orientace), hloubka z roste podél větví - každá větev dostane deterministický náklon mimo rovinu,
 // potomci ho dědí a přidávají vlastní, listy drží u své složky. Zepředu tak mapa vypadá jako 2D, po otočení se větve rozbíhají
@@ -46,7 +64,7 @@ const PRELET = { podilPodstromu: 1.05, podilRodice: 0.75, minPolomer: 0.02, maxP
 const BLIZKO_CAR = [0.05, 0.2];
 // úvodní záběr: zepředu (jako 2D), kamera tak daleko, aby obal promítnutých bodů zabral tento podíl užší strany
 const PODIL_ZABERU = 0.9;
-// zoom kolečkem a posun zrychlené po přejímce (Jaroslav 20. 10.): kolečko 2,5× proti vzoru (1,2), posun myší 2×, dvěma prsty 5× (vzor 0,3)
+// zoom kolečkem a posun zrychlené pro dotykové ovládání: kolečko 2,5× proti vzoru (1,2), posun myší 2×, dvěma prsty 5× (vzor 0,3)
 const RYCHLOST_ROTACE = 1.0, RYCHLOST_ZOOMU = 3.0, RYCHLOST_POSUNU = { mys: 0.6, dotyk: 1.5 };
 const ZORNY_UHEL = 60 * Math.PI / 180;
 const PRAH_TAPU = 5;                       // px: menší pohyb mezi stiskem a puštěním je ťuknutí, ne tažení
@@ -71,22 +89,22 @@ const POPISKU_VYBERU = { desktop: 24, telefon: 10 };
 const ODSTUP_POPISKU_VETVE = 1.5, ODSTUP_POPISKU_NOUZE = 4;   // jako ve 2D: popisek hlavní větve nejdál tolikrát svou výšku od uzlu, jinak dál podél větve ven
 
 // --- vektory a matice (sloupcově, jako WebGL) ---
-const sub = (a: any, b: any) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a: any, b: any) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const nasob = (a: any, k: any) => [a[0] * k, a[1] * k, a[2] * k];
-const skalar = (a: any, b: any) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const kriz = (a: any, b: any) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const delka = (a: any) => Math.hypot(a[0], a[1], a[2]);
-const jednotkovy = (a: any) => { const d = delka(a) || 1; return [a[0] / d, a[1] / d, a[2] / d]; };
-const sevri = (v: any, lo: any, hi: any) => Math.min(hi, Math.max(lo, v));
-const hladce = (t: any) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const sub = (a: ArrayLike<number>, b: ArrayLike<number>): Vektor3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a: ArrayLike<number>, b: ArrayLike<number>): Vektor3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const nasob = (a: ArrayLike<number>, k: number): Vektor3 => [a[0] * k, a[1] * k, a[2] * k];
+const skalar = (a: ArrayLike<number>, b: ArrayLike<number>) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const kriz = (a: ArrayLike<number>, b: ArrayLike<number>): Vektor3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const delka = (a: ArrayLike<number>) => Math.hypot(a[0], a[1], a[2]);
+const jednotkovy = (a: ArrayLike<number>): Vektor3 => { const d = delka(a) || 1; return [a[0] / d, a[1] / d, a[2] / d]; };
+const sevri = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const hladce = (t: number) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 // otočení vektoru v kolem jednotkové osy k o úhel (Rodriguesův vzorec)
-function otocKolem(v: any, k: any, uhel: any) {
+function otocKolem(v: number[], k: number[], uhel: number): Vektor3 {
 	const c = Math.cos(uhel), s = Math.sin(uhel), kv = kriz(k, v), kd = skalar(k, v) * (1 - c);
 	return [v[0] * c + kv[0] * s + k[0] * kd, v[1] * c + kv[1] * s + k[1] * kd, v[2] * c + kv[2] * s + k[2] * kd];
 }
 // Kvaternion ortonormální báze kamery. Kladná skalární složka volí kratší oblouk k jednotkové orientaci.
-function orientaceKamery(oko: any, nahoru: any) {
+function orientaceKamery(oko: number[], nahoru: number[]) {
 	const z = jednotkovy(oko);
 	let bok = kriz(nahoru, z);
 	if (delka(bok) < 1e-6) bok = kriz(Math.abs(z[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], z);
@@ -104,7 +122,7 @@ function orientaceKamery(oko: any, nahoru: any) {
 	const osa = jednotkovy(q.slice(0, 3)), uhel = 2 * Math.acos(sevri(q[3], -1, 1));
 	return { osa, uhel };
 }
-function pohledovaMatice(oko: any, cil: any, nahoru: any) {
+function pohledovaMatice(oko: number[], cil: number[], nahoru: number[]) {
 	const f = jednotkovy(sub(cil, oko));
 	let s = kriz(f, nahoru);
 	if (delka(s) < 1e-6) s = kriz(f, Math.abs(f[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
@@ -112,26 +130,26 @@ function pohledovaMatice(oko: any, cil: any, nahoru: any) {
 	const u = kriz(s, f);
 	return new Float32Array([s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -skalar(s, oko), -skalar(u, oko), skalar(f, oko), 1]);
 }
-function perspektivniMatice(fov: any, pomer: any, blizko: any, daleko: any) {
+function perspektivniMatice(fov: number, pomer: number, blizko: number, daleko: number) {
 	const f = 1 / Math.tan(fov / 2), nf = 1 / (blizko - daleko);
 	return new Float32Array([f / pomer, 0, 0, 0, 0, f, 0, 0, 0, 0, (daleko + blizko) * nf, -1, 0, 0, 2 * daleko * blizko * nf, 0]);
 }
-function nasobMatice(a: any, b: any) {
+function nasobMatice(a: Float32Array, b: Float32Array) {
 	const o = new Float32Array(16);
 	for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
 	return o;
 }
-function hladceKubicky(t: any) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function hladceKubicky(t: number) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 
 // --- 3D rozložení odvozené z 2D (deterministické: stejná data a orientace = stejné pozice) ---
 // x, y = hotové 2D rozložení (px, py; y obrácené, ať je nahoře nahoře), střed obalu v počátku. Hloubka z roste podél větví:
 // složka zdědí část náklonu rodiče a přidá vlastní (hash cesty, rozptyl podle hloubky), z = z rodiče + délka větve × náklon × SKLON;
 // list pokračuje ve sklonu složky s vlastním rozptylem, takže svazek má tloušťku i v z. Nakonec se z přeškáluje tak, aby jeho rozsah
 // byl HLOUBKA_PODIL delší strany 2D rozložení (z boku je mapa zřetelně prostorová, zepředu se promítá přesně na 2D).
-function rozlozZ2d(j: any) {
+function rozlozZ2d(j: Jadro3d) {
 	const { pocet, rodic, typ, vaha, cesta, hloubka, odchylka, px, py } = j;
 	const poz = new Float32Array(pocet * 3), polomerSveta = new Float32Array(pocet), naklon = new Float64Array(pocet), z = new Float64Array(pocet);
-	const rozptyl = (h: any) => ROZPTYL_NAKLONU[Math.min(h, ROZPTYL_NAKLONU.length - 1)];
+	const rozptyl = (h: number) => ROZPTYL_NAKLONU[Math.min(h, ROZPTYL_NAKLONU.length - 1)];
 	for (let i = 1; i < pocet; i++) {
 		const p = rodic[i], L = Math.hypot(px[i] - px[p], py[i] - py[p]);
 		if (typ[i] === 0) {
@@ -168,16 +186,16 @@ function rozlozZ2d(j: any) {
 // (strana ±1), zúžení od w0 (rodič) k w1 (potomek) ve světových jednotkách (1 jednotka ≈ 1 px při úvodním záběru, jako tloustka × kFit
 // ve 2D). Pásy jdou v jednom TRIANGLE_STRIP s degenerovanými přechody, silné větve první (LOD kreslí záři jen jim). Stopka listu: 4 kusy
 // bezieru jako pridejStopku, síla slábne s velikostí svazku. Opar: billboard na těžišti každého podstromu s poloměrem obalu.
-function sestavGeometrii(j: any, rozlozeni: any) {
+function sestavGeometrii(j: Jadro3d, rozlozeni: Rozlozeni3d) {
 	const { pocet, rodic, typ, vaha, cesta, hloubka, potomci, odchylka, smer, tloustka, barvaRgb } = j;
-	const p = rozlozeni.poz, smerSveta = (i: any) => -smer[i];   // 2D má y dolů, svět y nahoru: úhel se obrací
+	const p = rozlozeni.poz, smerSveta = (i: number) => -smer[i];   // 2D má y dolů, svět y nahoru: úhel se obrací
 	const X = new Float64Array(MAX_KUSU_PASU + 1), Y = new Float64Array(MAX_KUSU_PASU + 1), Z = new Float64Array(MAX_KUSU_PASU + 1);
-	const bezier = (a0: any, c1: any, c2: any, b0: any, t: any) => { const mt = 1 - t; return mt * mt * mt * a0 + 3 * mt * mt * t * c1 + 3 * mt * t * t * c2 + t * t * t * b0; };
-	const derivace = (a0: any, c1: any, c2: any, b0: any, t: any) => { const mt = 1 - t; return 3 * mt * mt * (c1 - a0) + 6 * mt * t * (c2 - c1) + 3 * t * t * (b0 - c2); };
-	const silna = (b: any) => hloubka[b] <= SILNA_VETEV.hloubka || tloustka[b] >= SILNA_VETEV.tloustka;
-	const vetve: any[] = [];
+	const bezier = (a0: number, c1: number, c2: number, b0: number, t: number) => { const mt = 1 - t; return mt * mt * mt * a0 + 3 * mt * mt * t * c1 + 3 * mt * t * t * c2 + t * t * t * b0; };
+	const derivace = (a0: number, c1: number, c2: number, b0: number, t: number) => { const mt = 1 - t; return 3 * mt * mt * (c1 - a0) + 6 * mt * t * (c2 - c1) + 3 * t * t * (b0 - c2); };
+	const silna = (b: number) => hloubka[b] <= SILNA_VETEV.hloubka || tloustka[b] >= SILNA_VETEV.tloustka;
+	const vetve: number[] = [];
 	for (let i = 1; i < pocet; i++) if (typ[i] === 0) vetve.push(i);
-	vetve.sort((a: any, b: any) => (Number(silna(b)) - Number(silna(a))) || (a - b));
+	vetve.sort((a: number, b: number) => (Number(silna(b)) - Number(silna(a))) || (a - b));
 	const pas = { poz: [] as number[], tecna: [] as number[], strana: [] as number[], sirka: [] as number[], barva: [] as number[], uzel: [] as number[] }, tenke = { poz: [] as number[], barva: [] as number[], uzel: [] as number[] };
 	let pasSilnychVrcholu = 0;
 	for (const b of vetve) {
@@ -197,8 +215,8 @@ function sestavGeometrii(j: any, rozlozeni: any) {
 			X[s] = bezier(ax, c1x, c2x, bx, t) - dy * vlna; Y[s] = bezier(ay, c1y, c2y, by, t) + dx * vlna; Z[s] = az + (bz - az) * t;
 		}
 		const w1 = tloustka[b], w0 = Math.max(w1, Math.min(tloustka[a] * 0.85, w1 * 1.8));
-		const [r, g, bl] = barvaRgb[b].map((v: any) => v / 255);
-		const pridej = (s: any, strana: any) => {
+		const [r, g, bl] = barvaRgb[b].map((v: number) => v / 255);
+		const pridej = (s: number, strana: number) => {
 			const s0 = Math.max(0, s - 1), s1 = Math.min(kusu, s + 1);
 			pas.poz.push(X[s], Y[s], Z[s]); pas.tecna.push(X[s1] - X[s0], Y[s1] - Y[s0], Z[s1] - Z[s0]);
 			pas.strana.push(strana); pas.sirka.push(w0 + (w1 - w0) * s / kusu); pas.barva.push(r, g, bl); pas.uzel.push(b);
@@ -212,7 +230,7 @@ function sestavGeometrii(j: any, rozlozeni: any) {
 	const stopky = { poz: [] as number[], barva: [] as number[], sila: [] as number[], uzel: [] as number[] }, opar = { poz: [] as number[], roh: [] as number[], vel: [] as number[], barva: [] as number[], sila: [] as number[], uzel: [] as number[] };
 	for (let i = 0; i < pocet; i++) {
 		if (typ[i] !== 0) continue;
-		const listy = potomci[i].filter((d: any) => typ[d] !== 0);
+		const listy = potomci[i].filter((d: number) => typ[d] !== 0);
 		if (listy.length) {
 			const sila = 0.3 * Math.min(1, 5 / Math.sqrt(listy.length));   // stopka slábne s velikostí svazku, jinak 300 stopek splyne v bílý klín
 			const ax = p[i * 3], ay = p[i * 3 + 1], az = p[i * 3 + 2], ua = i === 0 ? null : smerSveta(i);
@@ -220,7 +238,7 @@ function sestavGeometrii(j: any, rozlozeni: any) {
 				const bx = p[d * 3], by = p[d * 3 + 1], bz = p[d * 3 + 2], L = Math.hypot(bx - ax, by - ay);
 				const u0 = ua === null ? Math.atan2(by - ay, bx - ax) : ua, ub = smerSveta(d);
 				const c1x = ax + Math.cos(u0) * L * 0.38, c1y = ay + Math.sin(u0) * L * 0.38, c2x = bx - Math.cos(ub) * L * 0.3, c2y = by - Math.sin(ub) * L * 0.3;
-				const [r, g, bl] = barvaRgb[d].map((v: any) => v / 255);
+				const [r, g, bl] = barvaRgb[d].map((v: number) => v / 255);
 				let qx = ax, qy = ay, qz = az;
 				for (let s = 1; s <= KUSU_STOPKY; s++) {
 					const t = s / KUSU_STOPKY, x = bezier(ax, c1x, c2x, bx, t), y = bezier(ay, c1y, c2y, by, t), zz = az + (bz - az) * t;
@@ -230,14 +248,14 @@ function sestavGeometrii(j: any, rozlozeni: any) {
 			}
 		}
 		if (i === 0 || !potomci[i].length) continue;
-		const [r, g, bl] = barvaRgb[i].map((v: any) => v / 255), sila = Math.min(0.9, 0.3 + Math.log2(vaha[i] + 1) / 11);
+		const [r, g, bl] = barvaRgb[i].map((v: number) => v / 255), sila = Math.min(0.9, 0.3 + Math.log2(vaha[i] + 1) / 11);
 		const tx = rozlozeni.tez[i * 3], ty = rozlozeni.tez[i * 3 + 1], tz = rozlozeni.tez[i * 3 + 2], rr = rozlozeni.podR[i];
 		const rohy = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
 		if (opar.uzel.length) { opar.poz.push(tx, ty, tz); opar.roh.push(-1, -1); opar.vel.push(rr); opar.barva.push(r, g, bl); opar.sila.push(sila); opar.uzel.push(i); }
 		for (const [rx, ry] of rohy) { opar.poz.push(tx, ty, tz); opar.roh.push(rx, ry); opar.vel.push(rr); opar.barva.push(r, g, bl); opar.sila.push(sila); opar.uzel.push(i); }
 		opar.poz.push(tx, ty, tz); opar.roh.push(1, 1); opar.vel.push(rr); opar.barva.push(r, g, bl); opar.sila.push(sila); opar.uzel.push(i);
 	}
-	const f32 = (a: any) => new Float32Array(a), i32 = (a: any) => new Int32Array(a);
+	const f32 = (a: number[]) => new Float32Array(a), i32 = (a: number[]) => new Int32Array(a);
 	return {
 		pas: { poz: f32(pas.poz), tecna: f32(pas.tecna), strana: f32(pas.strana), sirka: f32(pas.sirka), barva: f32(pas.barva), uzel: i32(pas.uzel), vrcholu: pas.uzel.length, silnychVrcholu: pasSilnychVrcholu },
 		tenke: { poz: f32(tenke.poz), barva: f32(tenke.barva), sila: new Float32Array(tenke.uzel.length).fill(0.45), uzel: i32(tenke.uzel), vrcholu: tenke.uzel.length },
@@ -345,30 +363,30 @@ void main() {
 	gl_FragColor = vec4(vBarva * a, a);
 }`;
 
-function prelozShader(gl: any, typ: any, zdroj: any) {
-	const s = gl.createShader(typ);
+function prelozShader(gl: WebGLRenderingContext, typ: number, zdroj: string) {
+	const s = gl.createShader(typ)!;
 	gl.shaderSource(s, zdroj); gl.compileShader(s);
 	if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) { const log = gl.getShaderInfoLog(s); gl.deleteShader(s); throw new Error('shader: ' + log); }
 	return s;
 }
 // program: shadery se po slinkování odpojí a smažou hned (slinkovaný kód drží program), při chybě se uvolní i rozdělaný program
-function sestavProgram(gl: any, vs: any, fs: any, atributy: any, uniformy: any) {
+function sestavProgram(gl: WebGLRenderingContext, vs: string, fs: string, atributy: string[], uniformy: string[]) {
 	const p = gl.createProgram();
-	let sv: any = null, sf: any = null;
+	let sv: WebGLShader | null = null, sf: WebGLShader | null = null;
 	try {
 		sv = prelozShader(gl, gl.VERTEX_SHADER, vs); sf = prelozShader(gl, gl.FRAGMENT_SHADER, fs);
 		gl.attachShader(p, sv); gl.attachShader(p, sf);
-		atributy.forEach((a: any, i: any) => gl.bindAttribLocation(p, i, a));
+		atributy.forEach((a: string, i: number) => gl.bindAttribLocation(p, i, a));
 		gl.linkProgram(p);
 		gl.detachShader(p, sv); gl.detachShader(p, sf); gl.deleteShader(sv); gl.deleteShader(sf); sv = sf = null;
 		if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error('program: ' + gl.getProgramInfoLog(p));
-	} catch (chyba: any) {
+	} catch (chyba: unknown) {
 		if (sv) gl.deleteShader(sv);
 		if (sf) gl.deleteShader(sf);
 		gl.deleteProgram(p);
 		throw chyba;
 	}
-	const u: Record<string, any> = {};
+	const u: Record<string, WebGLBuffer | null> = {};
 	for (const n of uniformy) u[n] = gl.getUniformLocation(p, n);
 	return { program: p, atributy, u };
 }
@@ -376,44 +394,44 @@ function sestavProgram(gl: any, vs: any, fs: any, atributy: any, uniformy: any) 
 function tovarna(j: Jadro3d) {
  const texty = j.texty ?? vychoziTextyMapy();
 	const okno = j.popisky3d.ownerDocument.defaultView!;
-	const posluchace: { cil: EventTarget; typ: string; fn: (e: any) => void; volby?: AddEventListenerOptions }[] = [];
-	function naslouchej(cil: EventTarget, typ: string, fn: (e: any) => void, volby?: AddEventListenerOptions) {
-		posluchace.push({ cil, typ, fn, volby });
-		j.registruj(cil, typ, fn, volby);
+	const posluchace: { cil: EventTarget; typ: string; fn: EventListener; volby?: AddEventListenerOptions }[] = [];
+	function naslouchej<K extends keyof (GlobalEventHandlersEventMap & { webglcontextlost: Event; webglcontextrestored: Event })>(cil: EventTarget, typ: K, fn: (e: (GlobalEventHandlersEventMap & { webglcontextlost: Event; webglcontextrestored: Event })[K]) => void, volby?: AddEventListenerOptions) {
+		posluchace.push({ cil, typ, fn: fn as EventListener, volby });
+		j.registruj(cil, typ, fn as EventListener, volby);
 	}
 	let zniceno = false, idSnimku = 0, casovacStartu: number | null = null;
 	let { pocet, rodic, typ, vaha, jmeno, cesta, hloubka, potomci } = j;
 	const platnoGl = j.platno3d, platnoP = j.popisky3d, pctx = platnoP.getContext('2d')!;
-	let gl: any = null, progBody: any = null, progCary: any = null, progPasy: any = null, progOpar: any = null, ztracen = false;
+	let gl: WebGLRenderingContext = null!, progBody: Program3d = null!, progCary: Program3d = null!, progPasy: Program3d = null!, progOpar: Program3d = null!, ztracen = false;
 	let podporovano = false, duvodNepodpory = '';
-	let aktivni = false, rozlozeni: any = null, geometrie: any = null, rozlozeniMs = 0;
+	let aktivni = false, rozlozeni: Rozlozeni3d = null!, geometrie: Geometrie3d = null!, rozlozeniMs = 0;
 	let sirka = 0, vyska = 0, dpr = 1, maxBod = 64;
 	let cekajiciKamera: Kamera3d | null = null;
 	let kam = [0, 0, 1], cil = [0, 0, 0], nahoru = [0, 1, 0], dZakladni = 1;
-	let mv: any, mvp: any, proj: any, meritkoCss = 1;
-	let let_: any = null, posledniVstup = 0, kotvaKrouzeni: any = null, casKrouzeni = 0, casovacKlidu: any = null, krouzeniZapnute = true;
+	let mv: Float32Array, mvp: Float32Array, proj: Float32Array, meritkoCss = 1;
+	let let_: Let3d = null!, posledniVstup = 0, kotvaKrouzeni: { r: number; theta: number; phi: number } = null!, casKrouzeni = 0, casovacKlidu: number | null = null, krouzeniZapnute = true;
 	let smyckaBezi = false, posledniCas = 0, spinave = true, posledniKlicVyberu = '', snimku = 0, posledniSnimekMs = 0;
 	// LOD: konec JS posledního snímku, čas žádosti o čekající snímek a začátek vstupu (první sloučená událost gesta), který si ho vyžádal
 	let lod = 0, lodRucni = false, konecSnimku = 0, casPozadavku = 0, vstupOd = Infinity, zpomaleniMs = 0;
-	const intervalyRaf: any[] = [];
+	const intervalyRaf: number[] = [];
 	const stisknute = new Set();
 	let shift = false;
 	// per uzel odvozené pole
-	let skryty: any, kotva: any, stav: any, druh: any, barvy: any, alfaPopisku: any, prechod: any, oparAlfa: any;
-	let ekrX: any, ekrY: any, ekrD: any, ekrR: any;
+	let skryty: Uint8Array, kotva: Int32Array, stav: Float32Array, druh: Float32Array, barvy: Float32Array, alfaPopisku: Float32Array, prechod: Float32Array, oparAlfa: Float32Array;
+	let ekrX: Float32Array, ekrY: Float32Array, ekrD: Float32Array, ekrR: Float32Array;
 	// GL zdroje
-	const buf: Record<string, any> = {};
+	const buf: Record<string, WebGLBuffer | null> = {};
 	let pocetZavislostiVrcholu = 0, pocetZvyraznenychVrcholu = 0, pocetBoduVyberu = 0;
-	let impulzy: any[] = [], uzlyPopiskuVyberu: any[] = [], zasahyPopisku = new Map(), zasahyPopiskuVyberu = new Map(), pocetZavislosti = { krivky: 0, celkem: 0 }, zvPozPosledni: any = null;
-	let barvaRgbNahrana: any = null;   // pole barev 2D, z něhož jsou nahrané barvy geometrie; jiné pole = změna palety, barvy vrcholů se obnoví
-	const casySnimku: any[] = [];
+	let impulzy: { a: number; b: number; odStredu: boolean; pocet: number; rgb: number[]; faze: number }[] = [], uzlyPopiskuVyberu: number[] = [], zasahyPopisku = new Map<number, Obdelnik>(), zasahyPopiskuVyberu = new Map<number, Obdelnik>(), pocetZavislosti = { krivky: 0, celkem: 0 }, zvPozPosledni: number[] | null = null;
+	let barvaRgbNahrana: number[][] | null = null;   // pole barev 2D, z něhož jsou nahrané barvy geometrie; jiné pole = změna palety, barvy vrcholů se obnoví
+	const casySnimku: number[] = [];
 
 	// --- WebGL inicializace ---
 	// Levná jednorázová sonda při načtení (kvůli neaktivnímu tlačítku): kontext na dočasném plátně, hned uvolněný. Skutečný kontext,
 	// shadery a buffery vznikají až při první volbě 3D, výchozí 2D tak nedrží žádný WebGL zdroj.
 	function sondaWebgl() {
-		let g: any = null;
-		try { const c = platnoP.ownerDocument.createElement('canvas'); c.width = c.height = 1; g = c.getContext('webgl') || c.getContext('experimental-webgl'); } catch { g = null; }
+		let g: WebGLRenderingContext | null = null;
+		try { const c = vytvorPrvek(platnoP.ownerDocument, 'canvas'); c.width = c.height = 1; g = c.getContext('webgl') || (c.getContext('experimental-webgl') as WebGLRenderingContext | null); } catch { g = null; }
 		if (!g) { duvodNepodpory = texty.bezWebgl; return false; }
 		const ext = g.getExtension('WEBGL_lose_context');
 		if (ext) ext.loseContext();
@@ -421,15 +439,15 @@ function tovarna(j: Jadro3d) {
 	}
 	function ziskejKontext() {
 		try {
-			gl = platnoGl.getContext('webgl', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' })
-				|| platnoGl.getContext('experimental-webgl', { alpha: true, antialias: false, depth: false });
-		} catch { gl = null; }
+			gl = platnoGl.getContext('webgl', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' })!
+				|| (platnoGl.getContext('experimental-webgl', { alpha: true, antialias: false, depth: false }) as WebGLRenderingContext);
+		} catch { gl = null!; }
 		if (!gl) { duvodNepodpory = texty.bezWebgl; return false; }
 		napojKontext();   // životní cyklus od získání kontextu, dřív než vznikne první shader nebo buffer
 		return true;
 	}
 	function napojKontext() {
-		naslouchej(platnoGl, 'webglcontextlost', (e: any) => {
+		naslouchej(platnoGl, 'webglcontextlost', (e) => {
 			e.preventDefault();
 			ztracen = true;
 			uvolniZdroje();   // objekty zanikly s kontextem, zůstaly by jen neplatné odkazy
@@ -439,7 +457,7 @@ function tovarna(j: Jadro3d) {
 		});
 		naslouchej(platnoGl, 'webglcontextrestored', () => {
 			ztracen = false;
-			rozlozeni = null; geometrie = null;
+			rozlozeni = null!; geometrie = null!;
 			podporovano = true; duvodNepodpory = '';
 			j.oznacPodporu3d();
 		});
@@ -452,7 +470,7 @@ function tovarna(j: Jadro3d) {
 			for (const p of [progBody, progCary, progPasy, progOpar]) if (p) gl.deleteProgram(p.program);
 		}
 		for (const k of Object.keys(buf)) buf[k] = null;
-		progBody = progCary = progPasy = progOpar = null;
+		progBody = progCary = progPasy = progOpar = null!;
 	}
 	function sestavZdroje() {
 		uvolniZdroje();
@@ -461,8 +479,8 @@ function tovarna(j: Jadro3d) {
 			progCary = sestavProgram(gl, VS_CARY, FS_CARY, ['aPoz', 'aBarva', 'aSila', 'aStav'], ['uMvp', 'uMv', 'uMlha', 'uBlizko']);
 			progPasy = sestavProgram(gl, VS_PASY, FS_PASY, ['aPoz', 'aTecna', 'aStrana', 'aSirka', 'aBarva', 'aStav'], ['uMv', 'uProj', 'uMeritko', 'uNasobek', 'uMinPx', 'uMaxPx', 'uAlfa', 'uMlha', 'uBlizko', 'uMekky']);
 			progOpar = sestavProgram(gl, VS_OPAR, FS_OPAR, ['aPoz', 'aRoh', 'aVel', 'aBarva', 'aSila', 'aAlfa'], ['uMv', 'uProj', 'uMeritko', 'uMlha']);
-		} catch (chyba: any) { uvolniZdroje(); throw chyba; }   // selhání jednoho programu nesmí nechat živé ty předchozí (xcheck k3)
-		const rozsah = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+		} catch (chyba: unknown) { uvolniZdroje(); throw chyba; }   // selhání jednoho programu nesmí nechat živé ty předchozí 
+		const rozsah = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as Float32Array | null;
 		// strop průměru bodu včetně záře: blízké body by jinak zaplnily půl obrazovky a fill rate GPU (ne JS) určoval čas snímku (SwiftShader u vybraného uzlu 0,15-0,5 s/snímek při 220 px)
 		maxBod = Math.min(rozsah ? rozsah[1] : 64, 72 * dpr);
 		const staticke = {
@@ -474,7 +492,7 @@ function tovarna(j: Jadro3d) {
 		};
 		for (const [k, data] of Object.entries(staticke)) { buf[k] = gl.createBuffer(); nahraj(k, data); }
 		for (const k of ['barva', 'stav', 'druh', 'pasStav', 'tenkeStav', 'stopStav', 'oparAlfa', 'zavPoz', 'zavBarva', 'zavSila', 'zavStav', 'zvPoz', 'zvBarva', 'zvSila', 'zvStav', 'vybPoz', 'vybBarva', 'vybVel', 'vybStav', 'vybDruh', 'impPoz', 'impBarva', 'impVel', 'impStav', 'impDruh']) buf[k] = gl.createBuffer();
-		// barvy vrcholů podle aktuální palety: geometrie mohla vzniknout dřív (paleta změněná ve 2D během ztráty kontextu, xcheck k3)
+		// barvy vrcholů podle aktuální palety: geometrie mohla vzniknout dřív 
 		obnovBarvyGeometrie();
 		spinave = true;
 	}
@@ -482,16 +500,16 @@ function tovarna(j: Jadro3d) {
 	// vrcholu a nahrají znovu; programy ani rozložení se nemění
 	function obnovBarvyGeometrie() {
 		const barvaRgb = j.barvaRgb;
-		for (const [cast, klic] of [[geometrie.pas, 'pasBarva'], [geometrie.tenke, 'tenkeBarva'], [geometrie.stopky, 'stopBarva'], [geometrie.opar, 'oparBarva']]) {
+		for (const [cast, klic] of [[geometrie.pas, 'pasBarva'], [geometrie.tenke, 'tenkeBarva'], [geometrie.stopky, 'stopBarva'], [geometrie.opar, 'oparBarva']] as const) {
 			const { barva, uzel } = cast;
 			for (let v = 0; v < uzel.length; v++) { const c = barvaRgb[uzel[v]]; barva[v * 3] = c[0] / 255; barva[v * 3 + 1] = c[1] / 255; barva[v * 3 + 2] = c[2] / 255; }
 			nahraj(klic, barva);
 		}
 		barvaRgbNahrana = barvaRgb;
 	}
-	function nahraj(klic: any, data: any, dynamicky = false) { gl.bindBuffer(gl.ARRAY_BUFFER, buf[klic]); gl.bufferData(gl.ARRAY_BUFFER, data, dynamicky ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+	function nahraj(klic: string, data: Float32Array, dynamicky = false) { gl.bindBuffer(gl.ARRAY_BUFFER, buf[klic]); gl.bufferData(gl.ARRAY_BUFFER, data, dynamicky ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
 	}
-	function pripojAtribut(prog: any, jmenoAtributu: any, klic: any, slozek: any) {
+	function pripojAtribut(prog: Program3d, jmenoAtributu: string, klic: string, slozek: number) {
 		const idx = prog.atributy.indexOf(jmenoAtributu);
 		gl.bindBuffer(gl.ARRAY_BUFFER, buf[klic]); gl.enableVertexAttribArray(idx); gl.vertexAttribPointer(idx, slozek, gl.FLOAT, false, 0, 0);
 	}
@@ -512,17 +530,17 @@ function tovarna(j: Jadro3d) {
 		meritkoCss = vyska / (2 * Math.tan(ZORNY_UHEL / 2));
 		if (rozlozeni) {
 			if (rozlozeni.otoceno !== j.otoceno || rozlozeni.natazeni !== j.natazeni) {
-				// selhání sestavení po otočení musí přepnout do 2D jako při zapnutí a obnově, jinak by 3D zamrzlo nad prázdnými programy (xcheck k4)
-				try { prepocitejRozlozeni(); } catch (chyba: any) { podporovano = false; duvodNepodpory = texty.selhalWebgl + chyba.message; j.vypadek3d(duvodNepodpory); return; }
-				const zaber = vychoziZaber(); kam = zaber.kam; cil = zaber.cil; nahoru = [0, 1, 0]; let_ = null; kotvaKrouzeni = null;
+				// selhání sestavení po otočení musí přepnout do 2D jako při zapnutí a obnově, jinak by 3D zamrzlo nad prázdnými programy 
+				try { prepocitejRozlozeni(); } catch (chyba: unknown) { podporovano = false; duvodNepodpory = texty.selhalWebgl + (chyba as Error).message; j.vypadek3d(duvodNepodpory); return; }
+				const zaber = vychoziZaber(); kam = zaber.kam; cil = zaber.cil; nahoru = [0, 1, 0]; let_ = null!; kotvaKrouzeni = null!;
 			}
 			const zaber = vychoziZaber();
 			dZakladni = zaber.d;
-			// Celek letí k výchozímu záběru: po změně velikosti míří na nový a konec sedí přesně na něj (xcheck k10b A).
+			// Celek letí k výchozímu záběru: po změně velikosti míří na nový a konec sedí přesně na něj .
 			// Bezpečná vzdálenost jen přibere kouli kolem nového cíle. Rozdíl mezi zobrazeným stavem a novou interpolací
 			// v čase posledního snímku (navaz) plynule zmizí do konce letu, takže cíl ani vzdálenost neskočí v žádné fázi letu.
 			// Pozdní resize dostane aspoň DOJEZD_CELKU_PO_RESIZE_MS: časová osa letu se od posledního snímku natáhne, t zůstane spojité.
-			// Pevný termín (xcheck k10c A): resize se shodným cílovým záběrem let nemění vůbec; změna cíle smí konec posunout,
+			// Pevný termín : resize se shodným cílovým záběrem let nemění vůbec; změna cíle smí konec posunout,
 			// ale nikdy za konecPuvodni + DOJEZD_CELKU_PO_RESIZE_MS, ať přijde resize-ů kolik chce.
 			if (let_ && let_.orientace && !(shodnyBod(zaber.kam, let_.doKam) && shodnyBod(zaber.cil, let_.doCile))) {
 				const l = let_, t0 = l.t || 0;
@@ -554,8 +572,8 @@ function tovarna(j: Jadro3d) {
 		// se zvýrazní svým stavem (pás zůstane prohnutý), paprsky vazeb jsou samostatné čáry
 		const zvyraz = new Float32Array(pocet);
 		uzlyPopiskuVyberu = []; impulzy = [];
-		const zvPoz: any[] = [], zvBarva: any[] = [], zvSila: any[] = [];
-		const pridejCaru = (a: any, b: any, rgb: any, sila: any) => { zvPoz.push(rozlozeni.poz[a * 3], rozlozeni.poz[a * 3 + 1], rozlozeni.poz[a * 3 + 2], rozlozeni.poz[b * 3], rozlozeni.poz[b * 3 + 1], rozlozeni.poz[b * 3 + 2]); zvBarva.push(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, rgb[0] / 255, rgb[1] / 255, rgb[2] / 255); zvSila.push(sila, sila); };
+		const zvPoz: number[] = [], zvBarva: number[] = [], zvSila: number[] = [];
+		const pridejCaru = (a: number, b: number, rgb: number[], sila: number) => { zvPoz.push(rozlozeni.poz[a * 3], rozlozeni.poz[a * 3 + 1], rozlozeni.poz[a * 3 + 2], rozlozeni.poz[b * 3], rozlozeni.poz[b * 3 + 1], rozlozeni.poz[b * 3 + 2]); zvBarva.push(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, rgb[0] / 255, rgb[1] / 255, rgb[2] / 255); zvSila.push(sila, sila); };
 		if (vybrany >= 0) {
 			const stred = kotva[vybrany];
 			zvyraz[stred] = 1;
@@ -566,20 +584,20 @@ function tovarna(j: Jadro3d) {
 				if (uzlyPopiskuVyberu.length === 1) uzlyPopiskuVyberu.push(a);
 			}
 			if (stred === vybrany) {
-				const deti = potomci[vybrany].filter((d: any) => !skryty[d]).sort((p: any, q: any) => vaha[q] - vaha[p]);
+				const deti = potomci[vybrany].filter((d: number) => !skryty[d]).sort((p: number, q: number) => vaha[q] - vaha[p]);
 				const tlum = Math.min(1, 6 / Math.sqrt(deti.length || 1));
 				for (const d of deti) zvyraz[d] = Math.max(zvyraz[d], Math.max(0.5, tlum));
 				uzlyPopiskuVyberu.push(...deti);
 			}
 			const paleta = j.paleta, vazby = j.vazbyUzlu(vybrany);
 			for (const s of [{ mapa: vazby.ven, hex: paleta.ven, odStredu: true }, { mapa: vazby.dovnitr, hex: paleta.dovnitr, odStredu: false }]) {
-				const skupiny = new Map();
+				const skupiny = new Map<number, number>();
 				for (const [uzel, n] of s.mapa) { const k = kotva[uzel]; skupiny.set(k, (skupiny.get(k) || 0) + n); }
-				const serazene = [...skupiny.entries()].sort((p: any, q: any) => q[1] - p[1]).slice(0, MAX_SKUPIN_VAZEB);
+				const serazene = [...skupiny.entries()].sort((p, q) => q[1] - p[1]).slice(0, MAX_SKUPIN_VAZEB);
 				const maxN = serazene.length ? serazene[0][1] : 1, rgb = j.hexNaRgb(s.hex);
 				// stovky paprsků z jednoho bodu by se sečetly v bílou plochu: od ~100 skupin síla klesá s odmocninou počtu
 				const tlumPoctu = Math.min(1, 10 / Math.sqrt(serazene.length || 1));
-				serazene.forEach(([k, n]: any, poradi: any) => {
+				serazene.forEach(([k, n], poradi) => {
 					if (k === stred) return;
 					const sila = Math.log2(n + 1) / Math.log2(maxN + 1);
 					zvyraz[k] = Math.max(zvyraz[k], 0.9);
@@ -590,7 +608,7 @@ function tovarna(j: Jadro3d) {
 		}
 		for (let i = 0; i < pocet; i++) stav[i] = skryty[i] ? 0 : vybrany < 0 ? 1 : (zvyraz[i] || 0.12);
 		// stav na vrcholy pásů, tenkých čar a stopek podle uzlu potomka (skrytá nebo ztlumená větev zhasne i s kmenem)
-		const stavVrcholu = (uzly: any) => { const s = new Float32Array(uzly.length); for (let v = 0; v < uzly.length; v++) s[v] = stav[uzly[v]]; return s; };
+		const stavVrcholu = (uzly: Int32Array) => { const s = new Float32Array(uzly.length); for (let v = 0; v < uzly.length; v++) s[v] = stav[uzly[v]]; return s; };
 		nahraj('barva', barvy); nahraj('stav', stav); nahraj('druh', druh);
 		nahraj('pasStav', stavVrcholu(geometrie.pas.uzel)); nahraj('tenkeStav', stavVrcholu(geometrie.tenke.uzel)); nahraj('stopStav', stavVrcholu(geometrie.stopky.uzel));
 		pocetZvyraznenychVrcholu = zvSila.length; zvPozPosledni = zvPoz;
@@ -613,18 +631,18 @@ function tovarna(j: Jadro3d) {
 		pocetZavislostiVrcholu = 0;
 		pocetZavislosti = { krivky: 0, celkem: 0 };
 		if (!j.zavislostiZapnute) return;
-		const mapa = new Map();
+		const mapa = new Map<number, number>();
 		for (const [a, b] of j.vazby) {
 			const va = kotva[a], vb = kotva[b];
 			if (va === vb) continue;
 			const klic = va < vb ? va * pocet + vb : vb * pocet + va;
 			mapa.set(klic, (mapa.get(klic) || 0) + 1);
 		}
-		const vse = [...mapa.entries()].sort((p: any, q: any) => q[1] - p[1]), krivky = vse.slice(0, j.MAX_KRIVEK), maxPocet = vse.length ? vse[0][1] : 1;
+		const vse = [...mapa.entries()].sort((p, q) => q[1] - p[1]), krivky = vse.slice(0, j.MAX_KRIVEK), maxPocet = vse.length ? vse[0][1] : 1;
 		pocetZavislosti = { krivky: krivky.length, celkem: vse.length };
 		const rgb = j.hexNaRgb(j.paleta.vazba), tlum = j.vybrany >= 0 ? 0.15 : 1;
 		const poz = new Float32Array(krivky.length * 6), barva = new Float32Array(krivky.length * 6), sila = new Float32Array(krivky.length * 2), st = new Float32Array(krivky.length * 2).fill(tlum);
-		krivky.forEach(([klic, n]: any, q: any) => {
+		krivky.forEach(([klic, n], q) => {
 			const a = Math.floor(klic / pocet), b = klic % pocet, o = q * 6, s = Math.log2(n + 1) / Math.log2(maxPocet + 1);
 			poz[o] = rozlozeni.poz[a * 3]; poz[o + 1] = rozlozeni.poz[a * 3 + 1]; poz[o + 2] = rozlozeni.poz[a * 3 + 2];
 			poz[o + 3] = rozlozeni.poz[b * 3]; poz[o + 4] = rozlozeni.poz[b * 3 + 1]; poz[o + 5] = rozlozeni.poz[b * 3 + 2];
@@ -648,11 +666,11 @@ function tovarna(j: Jadro3d) {
 		kam = rozumna ? ulozena.kam.slice() : z.kam;
 		cil = rozumna ? ulozena.cil.slice() : z.cil;
 		nahoru = rozumna ? ulozena.nahoru.slice() : [0, 1, 0];
-		cekajiciKamera = null; let_ = null; kotvaKrouzeni = null;
+		cekajiciKamera = null; let_ = null!; kotvaKrouzeni = null!;
 		vstup(); pozadujSnimek();
 	}
 	function vzdalenost() { return delka(sub(kam, cil)); }
-	function omezVzdalenost(d: any) { return sevri(d, Math.max(2, rozlozeni.R * 0.01), rozlozeni.R * 8); }
+	function omezVzdalenost(d: number) { return sevri(d, Math.max(2, rozlozeni.R * 0.01), rozlozeni.R * 8); }
 	// úvodní záběr: zepředu (osa z, bez elevace), takže se mapa promítá jako 2D neuron; kamera v nejmenší vzdálenosti, při níž obal
 	// všech bodů zabere PODIL_ZABERU užší strany, cíl ve středu obalu (na šířku i na výšku stejně, orientaci už nese 2D rozložení)
 	function vychoziZaber() {
@@ -661,7 +679,7 @@ function tovarna(j: Jadro3d) {
 		return { kam: add(z.cil, nasob(smer, z.d)), cil: z.cil, d: z.d };
 	}
 	// cíl ve středu obalu bodů kolmo na směr pohledu a nejmenší vzdálenost kamery od něj, při níž všechny body leží uvnitř podílu zorného pole
-	function zaberNaVsechnyBody(smer: any, nahoruV: any, podil: any) {
+	function zaberNaVsechnyBody(smer: number[], nahoruV: number[], podil: number) {
 		const f = nasob(jednotkovy(smer), -1), bok = jednotkovy(kriz(f, nahoruV)), n = kriz(bok, f);
 		const ty = Math.tan(ZORNY_UHEL / 2) * podil, tx = ty * sirka / Math.max(1, vyska), p = rozlozeni.poz;
 		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -689,7 +707,7 @@ function tovarna(j: Jadro3d) {
 		return { cil, d: omezVzdalenost(d) };
 	}
 	// trackball: posun ukazatele po plátně (v CSS px) otočí oko i vektor nahoru kolem osy kolmé na směr pohybu
-	function otoc(dx: any, dy: any) {
+	function otoc(dx: number, dy: number) {
 		const nx = dx / (sirka * 0.5), ny = -dy / (sirka * 0.5), uhel = Math.hypot(nx, ny) * RYCHLOST_ROTACE;
 		if (uhel < 1e-9) return;
 		const oko = sub(kam, cil), smerOka = jednotkovy(oko), n = jednotkovy(nahoru), bok = jednotkovy(kriz(n, smerOka));
@@ -699,23 +717,23 @@ function tovarna(j: Jadro3d) {
 		kam = add(cil, otocKolem(oko, osa, uhel));
 		nahoru = jednotkovy(otocKolem(nahoru, osa, uhel));
 	}
-	function posun(dx: any, dy: any, rychlost: any = RYCHLOST_POSUNU.mys) {
+	function posun(dx: number, dy: number, rychlost: number = RYCHLOST_POSUNU.mys) {
 		const oko = sub(kam, cil), d = delka(oko);
 		const zmX = dx / sirka * d * rychlost, zmY = dy / vyska * d * rychlost;
 		const bok = jednotkovy(kriz(oko, nahoru)), n = jednotkovy(nahoru);
 		const krok = add(nasob(bok, zmX), nasob(n, zmY));
 		kam = add(kam, krok); cil = add(cil, krok);
 	}
-	function zoom(faktor: any) {
+	function zoom(faktor: number) {
 		if (!(faktor > 0) || faktor === 1) return;
 		const oko = sub(kam, cil), d = omezVzdalenost(delka(oko) * faktor);
 		kam = add(cil, nasob(jednotkovy(oko), d));
 	}
 	function vstup() {
 		posledniVstup = okno.performance.now();
-		kotvaKrouzeni = null;
-		let_ = null;   // přerušený přelet nechá kameru tam, kde je
-		j.aktualizujCelek?.();   // až po zrušení přeletu: během přeletu popisek Celek/Detail stojí (B5 k4)
+		kotvaKrouzeni = null!;
+		let_ = null!;   // přerušený přelet nechá kameru tam, kde je
+		j.aktualizujCelek?.();   // až po zrušení přeletu: během přeletu popisek Celek/Detail stojí 
 		naplanujKlid();
 	}
 	function naplanujKlid() {
@@ -725,14 +743,14 @@ function tovarna(j: Jadro3d) {
 		const za = Math.max(0, KROUZENI.prodlevaMs - (okno.performance.now() - posledniVstup)) + 20;
 		casovacKlidu = okno.setTimeout(() => { casovacKlidu = null; pozadujSnimek(); }, za);
 	}
-	function sfericke(v: any) { const r = delka(v) || 1; return { r, theta: Math.atan2(v[0], v[2]), phi: Math.acos(sevri(v[1] / r, -1, 1)) }; }
-	const zeSferickych = (s: any) => [s.r * Math.sin(s.phi) * Math.sin(s.theta), s.r * Math.cos(s.phi), s.r * Math.sin(s.phi) * Math.cos(s.theta)];
-	function zacniPrelet(doKam: any, doCile: any, trvani: any, poTe: any) {
-		let_ = { start: okno.performance.now(), trvani, odKam: kam.slice(), doKam, odCile: cil.slice(), doCile, poTe };
-		kotvaKrouzeni = null;
+	function sfericke(v: number[]) { const r = delka(v) || 1; return { r, theta: Math.atan2(v[0], v[2]), phi: Math.acos(sevri(v[1] / r, -1, 1)) }; }
+	const zeSferickych = (s: { r: number; theta: number; phi: number }): Vektor3 => [s.r * Math.sin(s.phi) * Math.sin(s.theta), s.r * Math.cos(s.phi), s.r * Math.sin(s.phi) * Math.cos(s.theta)];
+	function zacniPrelet(doKam: number[], doCile: number[], trvani: number, poTe: (() => void) | null) {
+		let_ = { start: okno.performance.now(), trvani, odKam: kam.slice(), doKam, odCile: cil.slice(), doCile, poTe } as Let3d;
+		kotvaKrouzeni = null!;
 		pozadujSnimek();
 	}
-	function krokPreletu(cas: any) {
+	function krokPreletu(cas: number) {
 		const t = Math.min(1, (cas - let_.start) / let_.trvani), k = hladceKubicky(t);
 		if (let_.orientace) {
 			// Jeden kubický náběh udrží i otočení o 180° pod 8° za snímek 16,7 ms.
@@ -746,36 +764,36 @@ function tovarna(j: Jadro3d) {
 			cil = zbyva ? add(s.cil, nasob(n.cil, zbyva)) : s.cil;
 			kam = add(cil, nasob(smer, zbyva ? s.d + n.d * zbyva : s.d));
 			l.t = t;
-			if (t >= 1) { const z = vychoziZaber(); kam = z.kam; cil = z.cil; nahoru = [0, 1, 0]; kotvaKrouzeni = null; }
+			if (t >= 1) { const z = vychoziZaber(); kam = z.kam; cil = z.cil; nahoru = [0, 1, 0]; kotvaKrouzeni = null!; }
 		} else {
 			kam = add(let_.odKam, nasob(sub(let_.doKam, let_.odKam), k));
 			cil = add(let_.odCile, nasob(sub(let_.doCile, let_.odCile), k));
 		}
-		if (t >= 1) { const hotovo = let_.poTe; let_ = null; posledniVstup = cas; if (hotovo) hotovo(); j.aktualizujCelek?.(); }
+		if (t >= 1) { const hotovo = let_.poTe; let_ = null!; posledniVstup = cas; if (hotovo) hotovo(); j.aktualizujCelek?.(); }
 	}
 	// shodný bod záběru v toleranci 1e-6 (resize, který cílový záběr nezmění)
-	function shodnyBod(a: any, b: any) { return a.every((v: any, i: any) => Math.abs(v - b[i]) <= 1e-6); }
+	function shodnyBod(a: number[], b: number[]) { return a.every((v: number, i: number) => Math.abs(v - b[i]) <= 1e-6); }
 	// cíl a vzdálenost letu Celku v čase t podle parametrů letu (bez navázání po resize)
-	function cilAVzdalenostCelku(l: any, t: any) {
+	function cilAVzdalenostCelku(l: Let3d, t: number) {
 		const otoceni = hladce(sevri((t - 0.2) / 0.6, 0, 1));
 		const d = t < 0.2 ? l.odD + (l.bezpecnaD - l.odD) * hladceKubicky(t / 0.2)
 			: t > 0.8 ? l.bezpecnaD + (l.doD - l.bezpecnaD) * hladceKubicky((t - 0.8) / 0.2) : l.bezpecnaD;
 		return { cil: add(l.odCile, nasob(sub(l.doCile, l.odCile), otoceni)), d };
 	}
-	function poziceUzlu(i: any) { return [rozlozeni.poz[i * 3], rozlozeni.poz[i * 3 + 1], rozlozeni.poz[i * 3 + 2]]; }
+	function poziceUzlu(i: number) { return [rozlozeni.poz[i * 3], rozlozeni.poz[i * 3 + 1], rozlozeni.poz[i * 3 + 2]]; }
 	// viditelný zástupce uzlu podle aktuálního sbalení (nejvyšší sbalený předek), čtený přímo ze stavu 2D: pole kotva z prebuduj
 	// může být po rozbalení předků hledáním ještě staré a přelet by mířil na sbalenou složku místo na hledaný bod
-	function viditelnaKotva(i: any) {
+	function viditelnaKotva(i: number) {
 		let k = i;
 		for (let a = rodic[i]; a > 0; a = rodic[a]) if (j.sbalene.has(cesta[a])) k = a;
 		return k;
 	}
 	// poloměr viditelného podstromu uzlu k (největší vzdálenost viditelného potomka; sbalená složka se počítá jako bod, dovnitř se nejde)
-	function polomerPodstromu(k: any) {
+	function polomerPodstromu(k: number) {
 		const p = poziceUzlu(k), zasobnik = [k];
 		let r = 0;
 		while (zasobnik.length) {
-			const n = zasobnik.pop();
+			const n = zasobnik.pop()!;
 			for (const d of potomci[n]) {
 				r = Math.max(r, delka(sub(poziceUzlu(d), p)));
 				if (typ[d] === 0 && !j.sbalene.has(cesta[d])) zasobnik.push(d);
@@ -784,14 +802,14 @@ function tovarna(j: Jadro3d) {
 		return r;
 	}
 	// vzdálenost dosednutí: poloměr záběru z podstromu a rodiče (viz PRELET), vzdálenost tak, aby se vešel do užšího rozměru zorného pole
-	function vzdalenostDosednuti(k: any) {
+	function vzdalenostDosednuti(k: number) {
 		const R = rozlozeni.R, dRodice = rodic[k] >= 0 ? delka(sub(poziceUzlu(rodic[k]), poziceUzlu(k))) : 0;
 		const r = sevri(Math.max(polomerPodstromu(k) * PRELET.podilPodstromu, dRodice * PRELET.podilRodice), R * PRELET.minPolomer, R * PRELET.maxPolomer);
 		const uhel = Math.min(ZORNY_UHEL, 2 * Math.atan(Math.tan(ZORNY_UHEL / 2) * sirka / Math.max(1, vyska)));
 		return omezVzdalenost(r / Math.sin(uhel / 2) * PRELET.rezerva);
 	}
 	// přelet k bodu: cíl je viditelný zástupce uzlu, směr pohledu zůstane, natočí se o 15° v azimutu; po doletu hned kroužení
-	function preletKUzlu(i: any) {
+	function preletKUzlu(i: number) {
 		const k = viditelnaKotva(i), p = poziceUzlu(k);
 		const d = vzdalenostDosednuti(k);
 		let smer = sub(kam, p);
@@ -800,7 +818,7 @@ function tovarna(j: Jadro3d) {
 		s.theta += PRELET.azimutRad; s.r = d;
 		const doKam = add(p, zeSferickych(s)), cesta_ = delka(sub(doKam, kam));
 		const trvani = sevri(PRELET.minMs + PRELET.msNaJednotku * cesta_, PRELET.minMs, PRELET.maxMs);
-		zacniPrelet(doKam, p, trvani, () => { kotvaKrouzeni = null; posledniVstup = okno.performance.now() - KROUZENI.prodlevaMs - 1; naplanujKlid(); pozadujSnimek(); });
+		zacniPrelet(doKam, p, trvani, () => { kotvaKrouzeni = null!; posledniVstup = okno.performance.now() - KROUZENI.prodlevaMs - 1; naplanujKlid(); pozadujSnimek(); });
 	}
 	function celek() {
 		if (!rozlozeni) return;
@@ -812,10 +830,10 @@ function tovarna(j: Jadro3d) {
 		Object.assign(let_, { orientace, odD: vzdalenost(), doD: z.d, bezpecnaD, konecPuvodni: let_.start + DOBA_PRELETU_CELEK,
 			lokalniNahoru: otocKolem(nahoru, orientace.osa, -orientace.uhel) });
 	}
-	function letNa(i: any) { if (!rozlozeni) return; preletKUzlu(i); }
-	// Detail (přelet na kotvu výběru) viditelně změní záběr (B5 k5, r2 nález 2): vzdálenost dosednutí jiná o víc než 1 % (tolerance
+	function letNa(i: number) { if (!rozlozeni) return; preletKUzlu(i); }
+	// Detail (přelet na kotvu výběru) viditelně změní záběr : vzdálenost dosednutí jiná o víc než 1 % (tolerance
 	// jeCelek), nebo kotva od středu dál než 1 % menšího rozměru plochy (cíl kamery se promítá do středu); natočení o azimut se nepočítá
-	function detailZmeniZaber(i: any) {
+	function detailZmeniZaber(i: number) {
 		if (!rozlozeni) return false;
 		const k = viditelnaKotva(i), d = vzdalenost();
 		if (Math.abs(vzdalenostDosednuti(k) - d) > d * 0.01) return true;
@@ -823,7 +841,7 @@ function tovarna(j: Jadro3d) {
 		return !p || Math.hypot(p.x - sirka / 2, p.y - vyska / 2) > Math.min(sirka, vyska) * 0.01;
 	}
 	// klidové kroužení: po prodlevě pomalá orbita kolem cíle s náběhem, kýváním elevace a dýcháním vzdálenosti
-	function krokKrouzeni(cas: any, dt: any) {
+	function krokKrouzeni(cas: number, dt: number) {
 		const klid = cas - posledniVstup;
 		if (!krouzeniZapnute || klid <= KROUZENI.prodlevaMs) return false;
 		const nabeh = Math.min(1, (klid - KROUZENI.prodlevaMs) / KROUZENI.nabehMs);
@@ -835,7 +853,7 @@ function tovarna(j: Jadro3d) {
 		kam = add(cil, zeSferickych({ r: a.r * dych, theta: a.theta + KROUZENI.uhlovaRychlost * t, phi: sevri(a.phi + elev, 0.05, Math.PI - 0.05) }));
 		return true;
 	}
-	function krokLetuKlavesami(dt: any) {
+	function krokLetuKlavesami(dt: number) {
 		if (!stisknute.size) return false;
 		const d = vzdalenost(), rychlost = sevri(d * 0.8, 10, 600) * (shift ? 3 : 1);
 		const vpred = jednotkovy(sub(cil, kam)), vpravo = jednotkovy(kriz(vpred, nahoru));
@@ -860,7 +878,7 @@ function tovarna(j: Jadro3d) {
 		proj = perspektivniMatice(ZORNY_UHEL, sirka / Math.max(1, vyska), Math.max(0.5, (d - R * 1.5) * 0.5), d + R * 4);
 		mvp = nasobMatice(proj, mv);
 	}
-	function promitniBod(x: any, y: any, z: any) {
+	function promitniBod(x: number, y: number, z: number) {
 		const m = mvp, w = m[3] * x + m[7] * y + m[11] * z + m[15];
 		if (w <= 0.5) return null;
 		return [((m[0] * x + m[4] * y + m[8] * z + m[12]) / w * 0.5 + 0.5) * sirka, (0.5 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w * 0.5) * vyska, w];
@@ -875,8 +893,8 @@ function tovarna(j: Jadro3d) {
 			ekrR[i] = rozlozeni.polomerSveta[i] * meritkoCss / q[2];
 		}
 	}
-	function promitni(i: any) { spocitejMatice(); promitniVse(); return ekrD[i] > 0 ? { x: ekrX[i], y: ekrY[i], d: ekrD[i], r: ekrR[i] } : null; }
-	function jasMlhy(d: any) { const [m0, m1] = mlha(); return 1 - 0.65 * sevri((d - m0) / (m1 - m0), 0, 1); }
+	function promitni(i: number) { spocitejMatice(); promitniVse(); return ekrD[i] > 0 ? { x: ekrX[i], y: ekrY[i], d: ekrD[i], r: ekrR[i] } : null; }
+	function jasMlhy(d: number) { const [m0, m1] = mlha(); return 1 - 0.65 * sevri((d - m0) / (m1 - m0), 0, 1); }
 	function mlha() { const d = vzdalenost(), R = rozlozeni.R; return [Math.max(1, d - R * 0.4), d + R * 1.1]; }
 	// přiblížení proti úvodnímu záběru (obdoba pohled.k / kFit ve 2D): rozpočet popisků s ním roste, do PREHLED_DO platí přehledová pravidla
 	function priblizeni() { return Math.max(1, dZakladni / Math.max(1e-6, vzdalenost())); }
@@ -900,8 +918,8 @@ function tovarna(j: Jadro3d) {
 		c.setTransform(dpr, 0, 0, dpr, 0, 0);
 		c.clearRect(0, 0, sirka, vyska);
 		c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = 'rgba(4,6,16,0.85)';
-		const bunka = 64, obsazene = new Map();
-		const volno = (x0: any, y0: any, x1: any, y1: any) => {
+		const bunka = 64, obsazene = new Map<number, number[][]>();
+		const volno = (x0: number, y0: number, x1: number, y1: number) => {
 			if (x0 < 0 || y0 < 0 || x1 > sirka || y1 > vyska) return false;
 			const bx0 = Math.floor(x0 / bunka), bx1 = Math.floor(x1 / bunka), by0 = Math.floor(y0 / bunka), by1 = Math.floor(y1 / bunka);
 			for (let gx = bx0; gx <= bx1; gx++) for (let gy = by0; gy <= by1; gy++) {
@@ -909,11 +927,11 @@ function tovarna(j: Jadro3d) {
 				if (seznam) for (const o of seznam) if (x0 < o[2] && x1 > o[0] && y0 < o[3] && y1 > o[1]) return false;
 			}
 			const obdelnik = [x0, y0, x1, y1];
-			for (let gx = bx0; gx <= bx1; gx++) for (let gy = by0; gy <= by1; gy++) { const k = gx * 100003 + gy; if (!obsazene.has(k)) obsazene.set(k, []); obsazene.get(k).push(obdelnik); }
+			for (let gx = bx0; gx <= bx1; gx++) for (let gy = by0; gy <= by1; gy++) { const k = gx * 100003 + gy; if (!obsazene.has(k)) obsazene.set(k, []); obsazene.get(k)!.push(obdelnik); }
 			return true;
 		};
 		const vybrany = j.vybrany;
-		zasahyPopisku = new Map(); zasahyPopiskuVyberu = new Map();
+		zasahyPopisku = new Map<number, Obdelnik>(); zasahyPopiskuVyberu = new Map<number, Obdelnik>();
 		// popisky výběru první (vybraný, rodič, děti), kotoučky zvýrazněných bodů jsou obsazené
 		if (vybrany >= 0) {
 			const strop = sirka < 500 ? POPISKU_VYBERU.telefon : POPISKU_VYBERU.desktop;
@@ -933,7 +951,7 @@ function tovarna(j: Jadro3d) {
 		// kandidáti jako ve 2D přehledu: složky od alfy POPISEK_OD (rozkreslené předky), listy jen u složky s rozestupem dětí nad 34 px
 		// (u kořene až v detailu); přednost složky před listy, hlavní větve první, pak těžší a mělčí
 		const POPISEK_OD = j.POPISEK_OD, POPISEK_PLNY = POPISEK_OD + 0.1, prehled = priblizeni() < j.PREHLED_DO, rozestup = j.rozestup;
-		const kandidati: any[] = [];
+		const kandidati: number[] = [];
 		for (let i = 1; i < pocet; i++) {
 			if (ekrD[i] <= 0 || alfaPopisku[i] < POPISEK_OD) continue;
 			if (stav[i] < 0.5 && (vybrany < 0 || stav[i] < 0.11)) continue;
@@ -944,7 +962,7 @@ function tovarna(j: Jadro3d) {
 			}
 			kandidati.push(i);
 		}
-		kandidati.sort((p: any, q: any) => (typ[p] - typ[q])
+		kandidati.sort((p: number, q: number) => (typ[p] - typ[q])
 			|| ((hloubka[p] === 1) !== (hloubka[q] === 1) ? hloubka[p] - hloubka[q] : 0)
 			|| (vaha[q] - vaha[p]) || (hloubka[p] - hloubka[q]) || (p - q));
 		const rozpocet = rozpocetPopisku(), pouzitaJmena = new Set();
@@ -956,7 +974,7 @@ function tovarna(j: Jadro3d) {
 			if (zasahyPopiskuVyberu.has(i)) continue;
 			const slozka = typ[i] === 0, hlavni = hloubka[i] === 1;
 			if (prehled && !hlavni) {
-				// v přehledu se opakující název (slides, Transcripts, concepts) ukáže na podstrom hlavní větve jen jednou
+				// v přehledu se opakující název  ukáže na podstrom hlavní větve jen jednou
 				const klicJmena = j.vetev[i] + '|' + jmeno[i];
 				if (pouzitaJmena.has(klicJmena)) continue;
 				pouzitaJmena.add(klicJmena);
@@ -971,7 +989,7 @@ function tovarna(j: Jadro3d) {
 		}
 		c.globalAlpha = 1;
 	}
-	function umisti(c: any, i: any, volno: any) {
+	function umisti(c: CanvasRenderingContext2D, i: number, volno: Volno) {
 		const velikost = j.velikostPopisku(i), pismo = j.pismoPopisku(i, velikost), w = j.sirkaTextu(c, jmeno[i], pismo), h = velikost * 0.65, y = ekrY[i] + 1;
 		let x = ekrX[i] + ekrR[i] + 5;
 		if (!volno(x - 3, y - h, x + w + 3, y + h)) { x = ekrX[i] - ekrR[i] - 5 - w; if (!volno(x - 3, y - h, x + w + 3, y + h)) return null; }
@@ -979,7 +997,7 @@ function tovarna(j: Jadro3d) {
 	}
 	// popisek hlavní větve jako ve 2D: kotva na prodloužení větve za uzlem (směr k promítnutému těžišti podstromu, jinak od středu),
 	// text přiléhá po směru větve, při kolizi se kotva posouvá dál ven, nikdy napříč; nebo zmenšený, nebo vůbec
-	function umistiPopisekVetve(c: any, i: any, volno: any) {
+	function umistiPopisekVetve(c: CanvasRenderingContext2D, i: number, volno: Volno) {
 		const koren = promitniBod(rozlozeni.poz[0], rozlozeni.poz[1], rozlozeni.poz[2]), tez = promitniBod(rozlozeni.tez[i * 3], rozlozeni.tez[i * 3 + 1], rozlozeni.tez[i * 3 + 2]);
 		const vx = ekrX[i], vy = ekrY[i], vr = ekrR[i];
 		let ux = tez ? tez[0] - vx : 0, uy = tez ? tez[1] - vy : 0;
@@ -1000,14 +1018,14 @@ function tovarna(j: Jadro3d) {
 		}
 		return null;
 	}
-	function vypis(c: any, i: any, misto: any, zesvetleni: any) {
+	function vypis(c: CanvasRenderingContext2D, i: number, misto: MistoPopisku, zesvetleni: number) {
 		c.font = misto.pismo;
 		c.strokeText(jmeno[i], misto.x, misto.y);
-		c.fillStyle = j.rgbNaCss(j.barvaRgb[i].map((ch: any) => Math.round(ch + (255 - ch) * zesvetleni)), 1);
+		c.fillStyle = j.rgbNaCss(j.barvaRgb[i].map((ch: number) => Math.round(ch + (255 - ch) * zesvetleni)), 1);
 		c.fillText(jmeno[i], misto.x, misto.y);
 	}
 	// zásah: popisek výběru, pak nejbližší promítnutý bod v toleranci (přednost větší a bližší), pak běžný popisek
-	function zasah(x: any, y: any) {
+	function zasah(x: number, y: number) {
 		if (!rozlozeni || !stav) return -1;
 		spocitejMatice(); promitniVse();
 		for (const [id, o] of zasahyPopiskuVyberu) if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1) return id;
@@ -1027,7 +1045,7 @@ function tovarna(j: Jadro3d) {
 	// --- kreslení ---
 	// pořadí nehraje roli (aditivní míchání je komutativní): opar, kmeny (jádro + záře), stopky a tenké čáry, závislosti, paprsky výběru, body, impulzy.
 	// LOD 1 kreslí záři jen silným větvím, LOD 2 navíc tenké větve jako čáry a bez oparu.
-	function kresliGl(cas: any, jenCary = false) {
+	function kresliGl(cas: number, jenCary = false) {
 		gl.viewport(0, 0, platnoGl.width, platnoGl.height);
 		gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
@@ -1044,13 +1062,13 @@ function tovarna(j: Jadro3d) {
 			gl.uniformMatrix4fv(progPasy.u.uMv, false, mv); gl.uniformMatrix4fv(progPasy.u.uProj, false, proj); gl.uniform1f(progPasy.u.uMeritko, meritkoCss);
 			gl.uniform2f(progPasy.u.uMlha, m0, m1); gl.uniform2f(progPasy.u.uBlizko, blizko[0], blizko[1]);
 			pripojAtribut(progPasy, 'aPoz', 'pasPoz', 3); pripojAtribut(progPasy, 'aTecna', 'pasTecna', 3); pripojAtribut(progPasy, 'aStrana', 'pasStrana', 1); pripojAtribut(progPasy, 'aSirka', 'pasSirka', 1); pripojAtribut(progPasy, 'aBarva', 'pasBarva', 3); pripojAtribut(progPasy, 'aStav', 'pasStav', 1);
-			const pruchod = (p: any, vrcholu: any) => { gl.uniform1f(progPasy.u.uNasobek, p.nasobek); gl.uniform1f(progPasy.u.uMinPx, p.minPx); gl.uniform1f(progPasy.u.uMaxPx, p.maxPx); gl.uniform1f(progPasy.u.uAlfa, p.alfa); gl.uniform1f(progPasy.u.uMekky, p === PAS_ZARE ? 1 : 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, vrcholu); };
+			const pruchod = (p: { nasobek: number; minPx: number; maxPx: number; alfa: number }, vrcholu: number) => { gl.uniform1f(progPasy.u.uNasobek, p.nasobek); gl.uniform1f(progPasy.u.uMinPx, p.minPx); gl.uniform1f(progPasy.u.uMaxPx, p.maxPx); gl.uniform1f(progPasy.u.uAlfa, p.alfa); gl.uniform1f(progPasy.u.uMekky, p === PAS_ZARE ? 1 : 0); gl.drawArrays(gl.TRIANGLE_STRIP, 0, vrcholu); };
 			pruchod(PAS_JADRO, lod >= MAX_LOD ? geometrie.pas.silnychVrcholu : geometrie.pas.vrcholu);
 			pruchod(PAS_ZARE, lod >= 1 ? geometrie.pas.silnychVrcholu : geometrie.pas.vrcholu);
 		}
 		gl.useProgram(progCary.program);
 		gl.uniformMatrix4fv(progCary.u.uMvp, false, mvp); gl.uniformMatrix4fv(progCary.u.uMv, false, mv); gl.uniform2f(progCary.u.uMlha, m0, m1); gl.uniform2f(progCary.u.uBlizko, blizko[0], blizko[1]);
-		const cary = (poz: any, barva: any, sila: any, st: any, vrcholu: any) => { if (!vrcholu) return; pripojAtribut(progCary, 'aPoz', poz, 3); pripojAtribut(progCary, 'aBarva', barva, 3); pripojAtribut(progCary, 'aSila', sila, 1); pripojAtribut(progCary, 'aStav', st, 1); gl.drawArrays(gl.LINES, 0, vrcholu); };
+		const cary = (poz: string, barva: string, sila: string, st: string, vrcholu: number) => { if (!vrcholu) return; pripojAtribut(progCary, 'aPoz', poz, 3); pripojAtribut(progCary, 'aBarva', barva, 3); pripojAtribut(progCary, 'aSila', sila, 1); pripojAtribut(progCary, 'aStav', st, 1); gl.drawArrays(gl.LINES, 0, vrcholu); };
 		cary('stopPoz', 'stopBarva', 'stopSila', 'stopStav', geometrie.stopky.vrcholu);
 		if (lod >= MAX_LOD) cary('tenkePoz', 'tenkeBarva', 'tenkeSila', 'tenkeStav', geometrie.tenke.vrcholu);
 		cary('zavPoz', 'zavBarva', 'zavSila', 'zavStav', pocetZavislostiVrcholu);
@@ -1068,7 +1086,7 @@ function tovarna(j: Jadro3d) {
 		if (impulzy.length) kresliImpulzy(cas);
 	}
 	// impulzy po čarách vazeb ve směru vazby (ven od vybraného, dovnitř k němu), velikost pevně 6 px
-	function kresliImpulzy(cas: any) {
+	function kresliImpulzy(cas: number) {
 		let n = 0;
 		for (const im of impulzy) n += im.pocet;
 		const poz = new Float32Array(n * 3), barva = new Float32Array(n * 3), st = new Float32Array(n).fill(0.9), vel = new Float32Array(n).fill(1), dr = new Float32Array(n);
@@ -1100,24 +1118,24 @@ function tovarna(j: Jadro3d) {
 	// snímek doručí událost až s dalším snímkem, proto se bere začátek pohybu, ne doručení). Delší mezera = nečinnost mezi pohyby: snímek se
 	// přeskočí, vzorky zůstanou. Od intervalu se odečte čekání na vstup, aby pomalý pohyb ruky s rychlými snímky stupeň nezvedl; dlouhý
 	// snímek vzorky nikdy nemaže. Medián z LOD_VZORKU nad prahem stupeň zvýší, nic ho nesnižuje.
-	function sledujLod(cas: any) {
+	function sledujLod(cas: number) {
 		if (lodRucni || lod >= MAX_LOD || !(posledniCas > 0) || !(konecSnimku > 0)) return;
 		const mezera = Math.max(0, Math.min(casPozadavku, vstupOd) - konecSnimku);
 		if (mezera > LOD_MEZERA_MS) return;
 		intervalyRaf.push(Math.max(0, cas - posledniCas - mezera));
 		if (intervalyRaf.length < LOD_VZORKU) return;
-		const serazene = intervalyRaf.slice().sort((p: any, q: any) => p - q);
+		const serazene = intervalyRaf.slice().sort((p: number, q: number) => p - q);
 		if (serazene[serazene.length >> 1] > LOD_PRAH_MS) lod++;
 		intervalyRaf.length = 0;
 	}
 	// začátek vstupu, který si žádá snímek: u gesta první sloučená událost (getCoalescedEvents), jinak čas události
-	function zaznamenejVstup(e: any) {
+	function zaznamenejVstup(e: Event & { getCoalescedEvents?: () => PointerEvent[] }) {
 		const sloucene = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
 		const od = sloucene && sloucene.length ? sloucene[0].timeStamp : e.timeStamp;
 		if (Number.isFinite(od) && od < vstupOd) vstupOd = od;
 	}
 	// smyčka běží jen při pohybu: přelet, let klávesami, kroužení, impulzy výběru; gesta si snímek vyžádají samy
-	function snimek(cas: any) {
+	function snimek(cas: number) {
 		idSnimku = 0;
 		smyckaBezi = false;
 		if (zniceno || !aktivni || j.jePozastaveno()) return;
@@ -1149,11 +1167,11 @@ function tovarna(j: Jadro3d) {
 	}
 
 	// --- ovládání ---
-	const ukazatele = new Map();
-	let gesto: any = null;
+	const ukazatele = new Map<number, { x: number; y: number }>();
+	let gesto: ({ typ: string; pohyb: boolean; tap: boolean } & Record<'x' | 'y' | 'startX' | 'startY' | 'd' | 'mx' | 'my', number>) | null = null;
 	function napojOvladani() {
 		platnoP.tabIndex = 0;
-		naslouchej(platnoP, 'pointerdown', (e: any) => {
+		naslouchej(platnoP, 'pointerdown', (e) => {
 			if (!aktivni || j.jePozastaveno() || j.uOkrajeObrazovky(e)) return;
 			platnoP.setPointerCapture(e.pointerId);
 			platnoP.focus({ preventScroll: true });
@@ -1161,15 +1179,15 @@ function tovarna(j: Jadro3d) {
 			j.zavriVysledky();
 			vstup();
 			if (ukazatele.size === 1) {
-				gesto = { typ: (e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey) ? 'posun' : 'rotace', x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, pohyb: false, tap: e.button === 0 && !e.ctrlKey && !e.metaKey };
+				gesto = { typ: (e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey) ? 'posun' : 'rotace', x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, pohyb: false, tap: e.button === 0 && !e.ctrlKey && !e.metaKey } as NonNullable<typeof gesto>;
 			} else if (ukazatele.size === 2) {
 				const [a, b] = [...ukazatele.values()];
-				gesto = { typ: 'dvaPrsty', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, pohyb: true, tap: false };
+				gesto = { typ: 'dvaPrsty', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, pohyb: true, tap: false } as NonNullable<typeof gesto>;
 			} else gesto = null;
 			platnoP.classList.add('tahnu');
 			e.preventDefault();
 		});
-		naslouchej(platnoP, 'pointermove', (e: any) => {
+		naslouchej(platnoP, 'pointermove', (e) => {
 			if (!ukazatele.has(e.pointerId)) return;
 			ukazatele.set(e.pointerId, { x: e.clientX, y: e.clientY });
 			if (!gesto) return;
@@ -1191,7 +1209,7 @@ function tovarna(j: Jadro3d) {
 			vstup();
 			pozadujSnimek();
 		});
-		const konec = (e: any) => {
+		const konec = (e: PointerEvent) => {
 			if (!ukazatele.has(e.pointerId)) return;
 			ukazatele.delete(e.pointerId);
 			vstup();   // dřív než ťuknutí: to spouští přelet, který by vstup zrušil
@@ -1201,28 +1219,28 @@ function tovarna(j: Jadro3d) {
 				gesto = null;
 			} else if (ukazatele.size === 1) {
 				const [z] = [...ukazatele.values()];
-				gesto = { typ: 'rotace', x: z.x, y: z.y, startX: z.x, startY: z.y, pohyb: true, tap: false };
+				gesto = { typ: 'rotace', x: z.x, y: z.y, startX: z.x, startY: z.y, pohyb: true, tap: false } as NonNullable<typeof gesto>;
 			} else if (ukazatele.size === 2) {
 				// ze tří prstů zpět na dva: pinch/pan zbývajících dvou pokračuje od jejich současné polohy (bez skoku a bez ťuknutí)
 				const [a, b] = [...ukazatele.values()];
-				gesto = { typ: 'dvaPrsty', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, pohyb: true, tap: false };
+				gesto = { typ: 'dvaPrsty', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, pohyb: true, tap: false } as NonNullable<typeof gesto>;
 			}
 		};
 		naslouchej(platnoP, 'pointerup', konec);
 		naslouchej(platnoP, 'pointercancel', konec);
-		naslouchej(platnoP, 'contextmenu', (e: any) => e.preventDefault());
-		naslouchej(platnoP, 'dblclick', (e: any) => e.preventDefault());
-		naslouchej(platnoP, 'wheel', (e: any) => {
+		naslouchej(platnoP, 'contextmenu', (e) => e.preventDefault());
+		naslouchej(platnoP, 'dblclick', (e) => e.preventDefault());
+		naslouchej(platnoP, 'wheel', (e) => {
 			e.preventDefault();
 			// exponenciála: pro malé kroky jako dřívější 1 + x, ale kladná i pro velké záporné deltaY (rychlé točení kolečkem)
-			// exponent sevřený, ať Math.exp nepodteče na 0 ani nepřeteče (xcheck k11); meze vzdálenosti hlídá zoom()
+			// exponent sevřený, ať Math.exp nepodteče na 0 ani nepřeteče ; meze vzdálenosti hlídá zoom()
 			const faktor = Math.exp(sevri(e.deltaY * (e.deltaMode === 2 ? 0.025 : e.deltaMode === 1 ? 0.01 : 0.00025) * RYCHLOST_ZOOMU, -20, 20));
 			zoom(faktor);
 			zaznamenejVstup(e);
 			vstup();
 			pozadujSnimek();
 		}, { passive: false });
-		naslouchej(platnoP, 'keydown', (e: any) => {
+		naslouchej(platnoP, 'keydown', (e) => {
 			if (!aktivni || j.jePozastaveno() || platnoP.ownerDocument.activeElement !== platnoP) return;
 			const k = e.key.toLowerCase();
 			if (e.ctrlKey || e.metaKey || e.altKey || !['w', 'a', 's', 'd', 'q', 'e', 'f', 'r', 'escape'].includes(k)) return;
@@ -1233,13 +1251,13 @@ function tovarna(j: Jadro3d) {
 			else if (k === 'r') { vstup(); celek(); e.preventDefault(); }
 			else if (k === 'escape') { j.vyber(-1); e.preventDefault(); }
 		});
-		naslouchej(platnoP, 'keyup', (e: any) => { const k = e.key.toLowerCase(); if (stisknute.has(k)) e.stopPropagation(); shift = e.shiftKey; stisknute.delete(k); j.aktualizujCelek?.(); });
+		naslouchej(platnoP, 'keyup', (e) => { const k = e.key.toLowerCase(); if (stisknute.has(k)) e.stopPropagation(); shift = e.shiftKey; stisknute.delete(k); j.aktualizujCelek?.(); });
 		naslouchej(platnoP, 'blur', () => { stisknute.clear(); j.aktualizujCelek?.(); });
 
 	}
-	function tapni(x: any, y: any) {
+	function tapni(x: number, y: number) {
 		const r = platnoP.getBoundingClientRect(), i = zasah(x - r.left, y - r.top);
-		// výběr až po startu přeletu: popisek Celek/Detail se během přeletu nemění, aktualizuje ho jeho konec (B5 k4)
+		// výběr až po startu přeletu: popisek Celek/Detail se během přeletu nemění, aktualizuje ho jeho konec 
 		if (i >= 0) { preletKUzlu(i); j.vyber(i); } else j.vyber(-1);
 		pozadujSnimek();
 	}
@@ -1264,8 +1282,8 @@ function tovarna(j: Jadro3d) {
 					dZakladni = vychoziZaber().d;
 					obnovKameru(cekajiciKamera);
 					if (!napojeno) { napojOvladani(); napojeno = true; }
-				} catch (chyba: any) {
-					podporovano = false; duvodNepodpory = texty.selhalWebgl + chyba.message;
+				} catch (chyba: unknown) {
+					podporovano = false; duvodNepodpory = texty.selhalWebgl + (chyba as Error).message;
 					j.hlaska(null); j.vypadek3d(duvodNepodpory);
 					return;
 				}
@@ -1292,7 +1310,7 @@ function tovarna(j: Jadro3d) {
 		casovacStartu = null;
 		if (casovacKlidu !== null) okno.clearTimeout(casovacKlidu);
 		casovacKlidu = null;
-		stisknute.clear(); shift = false; let_ = null; kotvaKrouzeni = null;
+		stisknute.clear(); shift = false; let_ = null!; kotvaKrouzeni = null!;
 		zrusGesto();
 	}
 	function vypni() { aktivni = false; pozastav(); j.hlaska(null); }
@@ -1311,23 +1329,23 @@ function tovarna(j: Jadro3d) {
 		posluchace.length = 0;
 		uvolniZdroje();
 		if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
-		gl = null; rozlozeni = null; geometrie = null;
+		gl = null!; rozlozeni = null!; geometrie = null!;
 		for (const c of [platnoGl, platnoP]) { c.width = c.height = 0; }
 	}
 
 	function zneplatni() { spinave = true; pozadujSnimek(); }
-	function zmenData(noveJadro: any, { jenVazby = false } = {}) {
-		j = noveJadro;
+	function zmenData(noveJadro: unknown, { jenVazby = false } = {}) {
+		j = noveJadro as Jadro3d;
 		if (jenVazby) { spinave = true; pozadujSnimek(); return; }
 		({ pocet, rodic, typ, vaha, jmeno, cesta, hloubka, potomci } = j);
-		vstup(); stav = null; impulzy = []; zasahyPopisku.clear(); zasahyPopiskuVyberu.clear();
+		vstup(); stav = null!; impulzy = []; zasahyPopisku.clear(); zasahyPopiskuVyberu.clear();
 		if (rozlozeni && aktivni) {
 			try { prepocitejRozlozeni(); dZakladni = vychoziZaber().d; }
-			catch (chyba: any) { podporovano = false; duvodNepodpory = texty.selhalWebgl + chyba.message; j.vypadek3d(); }
-		} else { uvolniZdroje(); rozlozeni = null; geometrie = null; }
+			catch (chyba: unknown) { podporovano = false; duvodNepodpory = texty.selhalWebgl + (chyba as Error).message; j.vypadek3d(); }
+		} else { uvolniZdroje(); rozlozeni = null!; geometrie = null!; }
 		spinave = true; pozadujSnimek();
 	}
-	function nastavKrouzeni(zapnout: any) { krouzeniZapnute = Boolean(zapnout); if (!krouzeniZapnute) kotvaKrouzeni = null; naplanujKlid(); }
+	function nastavKrouzeni(zapnout: boolean) { krouzeniZapnute = Boolean(zapnout); if (!krouzeniZapnute) kotvaKrouzeni = null!; naplanujKlid(); }
 
 	podporovano = sondaWebgl();
 
@@ -1342,29 +1360,29 @@ function tovarna(j: Jadro3d) {
 			get kamera() { return { kam: kam.slice(), cil: cil.slice(), nahoru: nahoru.slice(), vzdalenost: rozlozeni ? vzdalenost() : 0 }; },
 			get leti() { return !!let_; }, get krouzi() { return !!kotvaKrouzeni; }, get snimku() { return snimku; }, get posledniSnimekMs() { return posledniSnimekMs; },
 			get casySnimku() { return casySnimku.slice(); }, vynulujCasy() { casySnimku.length = 0; },
-			get popisky() { return [...zasahyPopisku].map(([id, o]: any) => ({ id, ...o })); }, get popiskyVyberu() { return [...zasahyPopiskuVyberu].map(([id, o]: any) => ({ id, ...o })); },
+			get popisky() { return [...zasahyPopisku].map(([id, o]) => ({ id, ...o })); }, get popiskyVyberu() { return [...zasahyPopiskuVyberu].map(([id, o]) => ({ id, ...o })); },
 			get zavislosti() { return { ...pocetZavislosti }; }, get impulzu() { return impulzy.length; }, get skrytych() { let n = 0; if (skryty) for (let i = 0; i < pocet; i++) n += skryty[i]; return n; },
-			promitni, zasah, poziceUzlu: (i: any) => rozlozeni ? poziceUzlu(i) : null, polomerSveta: (i: any) => rozlozeni ? rozlozeni.polomerSveta[i] : 0,
-			nastavKlid(ms: any) { posledniVstup = okno.performance.now() - ms; kotvaKrouzeni = null; naplanujKlid(); pozadujSnimek(); },
+			promitni, zasah, poziceUzlu: (i: number) => rozlozeni ? poziceUzlu(i) : null, polomerSveta: (i: number) => rozlozeni ? rozlozeni.polomerSveta[i] : 0,
+			nastavKlid(ms: number) { posledniVstup = okno.performance.now() - ms; kotvaKrouzeni = null!; naplanujKlid(); pozadujSnimek(); },
 			ztratKontext() { const ext = gl && gl.getExtension('WEBGL_lose_context'); if (!ext) return false; ext.loseContext(); return true; },
 			get dpr() { return dpr; }, get rozmer() { return [sirka, vyska]; },
 			get prstu() { return ukazatele.size; }, get gesto() { return gesto ? gesto.typ : null; },
-			viditelnaKotva, vzdalenostDosednuti: (i: any) => rozlozeni ? vzdalenostDosednuti(viditelnaKotva(i)) : 0, polomerPodstromu: (i: any) => rozlozeni ? polomerPodstromu(i) : 0,
+			viditelnaKotva, vzdalenostDosednuti: (i: number) => rozlozeni ? vzdalenostDosednuti(viditelnaKotva(i)) : 0, polomerPodstromu: (i: number) => rozlozeni ? polomerPodstromu(i) : 0,
 			get rozpocetPopisku() { return rozlozeni ? rozpocetPopisku() : 0; }, get priblizeni() { return rozlozeni ? priblizeni() : 1; }, get dZakladni() { return dZakladni; },
-			// k8: rozsahy rozložení (x, y ze 2D, z hloubka) a počty vrcholů geometrie, LOD (čtení i ruční nastavení), kamera podle azimutu a elevace
+			//  rozsahy rozložení (x, y ze 2D, z hloubka) a počty vrcholů geometrie, LOD (čtení i ruční nastavení), kamera podle azimutu a elevace
 			get rozsah() { return rozlozeni ? { ...rozlozeni.rozsah, podilZ: rozlozeni.rozsah.z / Math.max(rozlozeni.rozsah.x, rozlozeni.rozsah.y), otoceno: rozlozeni.otoceno, natazeni: rozlozeni.natazeni } : null; },
 			get geometrie() { return geometrie ? { pasVrcholu: geometrie.pas.vrcholu, pasSilnychVrcholu: geometrie.pas.silnychVrcholu, tenkeVrcholu: geometrie.tenke.vrcholu, stopekVrcholu: geometrie.stopky.vrcholu, oparVrcholu: geometrie.opar.vrcholu } : null; },
-			get lod() { return lod; }, nastavLod(n: any, rucni: any = true) { lod = sevri(Math.round(n), 0, MAX_LOD); lodRucni = rucni; intervalyRaf.length = 0; pozadujSnimek(); },
-			// k9: počet nasbíraných vzorků LOD; umělé zpomalení každého snímku (ms, 0 vypne) pro kontrolu LOD; barevné buffery částí geometrie s uzlem vrcholu a barvy uzlů 2D
-			get lodVzorku() { return intervalyRaf.length; }, zpomalSnimek(ms: any) { zpomaleniMs = Math.max(0, Number(ms) || 0); },
+			get lod() { return lod; }, nastavLod(n: number, rucni: boolean = true) { lod = sevri(Math.round(n), 0, MAX_LOD); lodRucni = rucni; intervalyRaf.length = 0; pozadujSnimek(); },
+			//  počet nasbíraných vzorků LOD; umělé zpomalení každého snímku (ms, 0 vypne) pro kontrolu LOD; barevné buffery částí geometrie s uzlem vrcholu a barvy uzlů 2D
+			get lodVzorku() { return intervalyRaf.length; }, zpomalSnimek(ms: number) { zpomaleniMs = Math.max(0, Number(ms) || 0); },
 			castiGeometrie() { return geometrie ? { pas: { buffer: buf.pasBarva, uzel: geometrie.pas.uzel }, tenke: { buffer: buf.tenkeBarva, uzel: geometrie.tenke.uzel }, stopky: { buffer: buf.stopBarva, uzel: geometrie.stopky.uzel }, opar: { buffer: buf.oparBarva, uzel: geometrie.opar.uzel } } : null; },
 			get barvyUzlu() { return j.barvaRgb; },
 			// promítnuté pozice uzlů v aktuální kameře (CSS px) pro srovnání tvaru s 2D
-			promitnutePozice(ids: any) { if (!rozlozeni) return null; spocitejMatice(); promitniVse(); return ids.map((i: any) => ekrD[i] > 0 ? [ekrX[i], ekrY[i]] : null); },
+			promitnutePozice(ids: number[]) { if (!rozlozeni) return null; spocitejMatice(); promitniVse(); return ids.map((i: number) => ekrD[i] > 0 ? [ekrX[i], ekrY[i]] : null); },
 			// kamera ve vzdálenosti d (výchozí aktuální) kolem cíle: azimut kolem svislé osy, elevace nad rovinou xz; nahoru = y
-			nastavKameru(azimutDeg: any, elevaceDeg: any, d: any) {
+			nastavKameru(azimutDeg: number, elevaceDeg: number, d: number) {
 				if (!rozlozeni) return; const r = d || vzdalenost(), az = azimutDeg * Math.PI / 180, el = elevaceDeg * Math.PI / 180;
-				kam = add(cil, [r * Math.cos(el) * Math.sin(az), r * Math.sin(el), r * Math.cos(el) * Math.cos(az)]); nahoru = [0, 1, 0]; let_ = null; kotvaKrouzeni = null; pozadujSnimek();
+				kam = add(cil, [r * Math.cos(el) * Math.sin(az), r * Math.sin(el), r * Math.cos(el) * Math.cos(az)]); nahoru = [0, 1, 0]; let_ = null!; kotvaKrouzeni = null!; pozadujSnimek();
 			},
 			// obal promítnutých viditelných bodů v CSS px [x0, y0, x1, y1]
 			obalBodu() { if (!rozlozeni) return null; spocitejMatice(); promitniVse(); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (let i = 0; i < pocet; i++) { if (ekrD[i] <= 0 || (stav && stav[i] <= 0)) continue; x0 = Math.min(x0, ekrX[i]); y0 = Math.min(y0, ekrY[i]); x1 = Math.max(x1, ekrX[i]); y1 = Math.max(y1, ekrY[i]); } return [x0, y0, x1, y1]; },
@@ -1374,7 +1392,7 @@ function tovarna(j: Jadro3d) {
 				if (spinave) prebuduj();
 				spocitejMatice();
 				const m = mvp, W = sirka, H = vyska, polDiag = Math.hypot(W, H) / 2, zv = zvPozPosledni, blizko = 0.5;
-				const klip = (x: any, y: any, z: any) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[3] * x + m[7] * y + m[11] * z + m[15]];
+				const klip = (x: number, y: number, z: number) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[3] * x + m[7] * y + m[11] * z + m[15]];
 				let n = 0, soucet = 0, dlouhych = 0, koncuMimo = 0;
 				for (let q = 0; q + 5 < zv.length; q += 6) {
 					let a = klip(zv[q], zv[q + 1], zv[q + 2]), b = klip(zv[q + 3], zv[q + 4], zv[q + 5]);
@@ -1397,7 +1415,7 @@ function tovarna(j: Jadro3d) {
 				return { paprsku: n, prumerPodil: n ? soucet / n / polDiag : 0, podilDlouhych: n ? dlouhych / n : 0, podilKoncuMimo: n ? koncuMimo / n : 0 };
 			},
 			// podíl rozsvícených vzorků plátna WebGL po jednom nakreslení (každý krok-tý pixel; jas = součet RGB nad prahem)
-			vzorekJasu(krok: any = 6, prah: any = 90, jenCary: any = false) { if (!gl || !rozlozeni || ztracen) return null; if (spinave) prebuduj(); spocitejMatice(); promitniVse(); spocitejAlfy(); kresliGl(okno.performance.now(), jenCary); const w = platnoGl.width, h = platnoGl.height, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); let n = 0, svetle = 0; for (let y = 0; y < h; y += krok) for (let x = 0; x < w; x += krok) { const o = (y * w + x) * 4; n++; if (px[o] + px[o + 1] + px[o + 2] > prah) svetle++; } return { podil: svetle / n, vzorku: n }; }
+			vzorekJasu(krok: number = 6, prah: number = 90, jenCary: boolean = false) { if (!gl || !rozlozeni || ztracen) return null; if (spinave) prebuduj(); spocitejMatice(); promitniVse(); spocitejAlfy(); kresliGl(okno.performance.now(), jenCary); const w = platnoGl.width, h = platnoGl.height, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); let n = 0, svetle = 0; for (let y = 0; y < h; y += krok) for (let x = 0; x < w; x += krok) { const o = (y * w + x) * 4; n++; if (px[o] + px[o + 1] + px[o + 2] > prah) svetle++; } return { podil: svetle / n, vzorku: n }; }
 		}
 	};
 }

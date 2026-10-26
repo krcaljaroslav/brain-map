@@ -1,4 +1,4 @@
-import { PluginSettingTab, Setting, type App, type Plugin } from 'obsidian';
+import { PluginSettingTab, Setting, type App, type Plugin, type SettingDefinitionRender } from 'obsidian';
 import { VYCHOZI_VYLOUCENE_SLOZKY } from './adapter.ts';
 import { KLICE_PALET, nazvyPalet, t } from './i18n.ts';
 
@@ -65,7 +65,7 @@ export function nactiNastaveni(ulozena: unknown): NastaveniMozku {
   if (!ulozena || typeof ulozena !== 'object') return vysledek;
   const d = ulozena as Record<string, unknown>;
   if (typeof d.paleta === 'number' && Number.isInteger(d.paleta) && d.paleta >= 0 && d.paleta < POCET_PALET) vysledek.paleta = d.paleta;
-  for (const klic of ['hloubka', 'zavislosti', 'ostatni', 'krouzeni'] as const) if (typeof d[klic] === 'boolean') vysledek[klic] = d[klic] as boolean;
+  for (const klic of ['hloubka', 'zavislosti', 'ostatni', 'krouzeni'] as const) if (typeof d[klic] === 'boolean') vysledek[klic] = d[klic];
   if (jePoleRetezcu(d.vylouceneSlozky)) vysledek.vylouceneSlozky = radkyVyloucenych(d.vylouceneSlozky.join('\n'));
   if (jePoleRetezcu(d.sbalene)) vysledek.sbalene = [...new Set(d.sbalene)];
   if (d.pohled === '2d' || d.pohled === '3d') vysledek.pohled = d.pohled;
@@ -151,29 +151,38 @@ export class MozekNastaveniTab extends PluginSettingTab {
     super(app, plugin);
   }
 
+  getSettingDefinitions(): SettingDefinitionRender[] {
+    const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni', titulek: string, popis: string): SettingDefinitionRender => ({
+      name: titulek, desc: popis,
+      render: (radek) => { radek.addToggle((volba) => {
+        volba.setValue(this.plugin.nastaveni[nazev]).onChange((hodnota) => this.plugin.zmenNastaveni({ [nazev]: hodnota }));
+      }); },
+    });
+    return [
+      { name: t('paleta'), desc: t('paletaPopis'), render: (radek) => { radek.addDropdown((volba) => {
+        nazvyPalet().forEach((nazev, index) => { volba.addOption(String(index), nazev); });
+        volba.setValue(String(this.plugin.nastaveni.paleta)).onChange((hodnota) => this.plugin.zmenNastaveni({ paleta: Number(hodnota) }));
+      }); } },
+      prepinac('hloubka', t('hloubka'), t('hloubkaPopis')),
+      prepinac('zavislosti', t('zavislosti'), t('zavislostiPopis')),
+      prepinac('ostatni', t('ostatni'), t('ostatniPopis')),
+      prepinac('krouzeni', t('krouzeni'), t('krouzeniPopis')),
+      { name: t('vyloucene'), desc: t('vyloucenePopis'), render: (radek) => { radek.addTextArea((pole) => {
+        pole.setValue(this.plugin.nastaveni.vylouceneSlozky.join('\n')).onChange((text) => this.plugin.zmenNastaveni({ vylouceneSlozky: radkyVyloucenych(text) }, false));
+        pole.inputEl.rows = 6;
+        pole.inputEl.addEventListener('blur', () => this.plugin.promitniVyloucene());
+      }); } },
+    ];
+  }
+
+  // Obsidian před 1.13.0 volá display(); obě API vykreslí tytéž řádky a posluchače.
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    const n = this.plugin.nastaveni;
-    new Setting(containerEl).setName(t('paleta')).setDesc(t('paletaPopis')).addDropdown((volba) => {
-      nazvyPalet().forEach((nazev, index) => volba.addOption(String(index), nazev));
-      volba.setValue(String(n.paleta)).onChange((hodnota) => this.plugin.zmenNastaveni({ paleta: Number(hodnota) }));
-    });
-    const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni', titulek: string, popis: string) => {
-      new Setting(containerEl).setName(titulek).setDesc(popis).addToggle((volba) => {
-        volba.setValue(n[nazev]).onChange((hodnota) => this.plugin.zmenNastaveni({ [nazev]: hodnota }));
-      });
-    };
-    prepinac('hloubka', t('hloubka'), t('hloubkaPopis'));
-    prepinac('zavislosti', t('zavislosti'), t('zavislostiPopis'));
-    prepinac('ostatni', t('ostatni'), t('ostatniPopis'));
-    prepinac('krouzeni', t('krouzeni'), t('krouzeniPopis'));
-    new Setting(containerEl).setName(t('vyloucene')).setDesc(t('vyloucenePopis')).addTextArea((pole) => {
-      pole.setValue(n.vylouceneSlozky.join('\n')).onChange((text) => this.plugin.zmenNastaveni({ vylouceneSlozky: radkyVyloucenych(text) }, false));
-      pole.inputEl.rows = 6;
-      // posluchač patří prvku pole, zmizí s ním při dalším display(); hide() dorovná zavření záložky bez opuštění pole
-      pole.inputEl.addEventListener('blur', () => this.plugin.promitniVyloucene());
-    });
+    for (const definice of this.getSettingDefinitions()) {
+      const radek = new Setting(containerEl).setName(definice.name).setDesc(definice.desc ?? '');
+      definice.render(radek, undefined!);
+    }
   }
 
   hide(): void {

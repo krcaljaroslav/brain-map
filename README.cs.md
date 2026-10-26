@@ -19,7 +19,8 @@ Brain Map kreslí tvůj vault v Obsidianu jako neuronovou síť: složky tvoří
 | Mapa vaultu | Zobrazuje složky, poznámky a odkazy z tvého vaultu ve 2D nebo 3D. |
 | Hledání | Najde složky a soubory podle názvu a přeletí k vybranému výsledku. |
 | Větve | Sbal složky pod kořenem vaultu nebo použij **Expand all** a **Collapse all**. |
-| Panel výběru | Ukáže název, cestu a počty příchozích a odchozích odkazů uzlu, u složek také počet všech souborů včetně podsložek a souborů mimo Markdown. Soubory otevřeš přes **Open note**, složky pod kořenem vaultu sbalíš či rozbalíš přes **Collapse** / **Expand**. |
+| Panel výběru | Ukáže název, cestu a počty příchozích a odchozích odkazů uzlu, u složek také počet přímých dětí včetně podsložek a souborů mimo Markdown. Soubory otevřeš přes **Open note**, složky pod kořenem vaultu sbalíš či rozbalíš přes **Collapse** / **Expand**. |
+| Seznamy souborů a vazeb | Kliknutím na nenulový počet zobrazíš přímé děti nebo propojené poznámky; výběrem položky k ní přeletíš a přes **Back** se vrátíš. Seznam ukáže nejvýše 500 položek. |
 | Zvýraznění vazeb | Vybraný uzel ukáže odchozí a příchozí odkazy ve dvou barvách s pulzy ve směru odkazu, i když je **Dependencies** vypnuté. |
 | Další soubory | Volitelně zahrne PDF, obrázky a další soubory i s odkazy z poznámek. |
 | Barvy | Vyber si **Aurora**, **Neon night** nebo **Coral and amber**. |
@@ -48,6 +49,7 @@ Potřebuješ Obsidian 1.8.7 nebo novější.
 | Posun a přiblížení ve 2D | Tažením mapu posuneš, kolečkem nebo sevřením a roztažením dvou prstů změníš přiblížení. |
 | Otáčení, posun a přiblížení ve 3D | Tažením otáčíš, pravým tlačítkem s tažením nebo Shift s tažením posouváš, kolečkem měníš přiblížení. Na dotykové obrazovce otáčej jedním prstem, dvěma posouvej a měň přiblížení. |
 | Klávesnice ve 3D | Když má plátno fokus, R ukáže celek, F přiletí k výběru a Esc ho zruší. WASD + Q/E pohybují kamerou, se Shiftem rychleji. Esc zruší výběr i ve 2D. |
+| Procházení souborů a vazeb | Klikni nebo klepni na počet v panelu výběru, pak na položku. **Back** vrátí předchozí uzel, **Clear selection** tuto historii vymaže. Esc nebo klik mimo seznam ho zavře. |
 | Hledání (2D / 3D) | Do **Search notes** napiš alespoň dva znaky, vyber výsledek nebo stiskni Enter pro první shodu. |
 | Návrat na celek nebo detail | **Overview** ukáže celou mapu. Když je vidět celá mapa a uzel je vybraný, tlačítko se změní na **Detail** a přeletí zpět k uzlu. Ani jedno nemění sbalení složek ani výběr. |
 | Obnovení stromu | Po přidání, smazání, přesunu nebo přejmenování souborů stiskni **Refresh map** v panelu **Settings**, ikonu obnovení v záhlaví karty mapy nebo spusť **Brain Map: Refresh map**. Odkazy mezi existujícími uzly se aktualizují, když je Obsidian rozliší. |
@@ -64,7 +66,7 @@ Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu
 | **Dependencies** | Zobrazuje odkazy mezi poznámkami a při zapnutém **Other files** i odkazy na další soubory. | Vypnuto |
 | **Other files** | Zahrne i jiné soubory než Markdown poznámky. | Vypnuto |
 | **Orbit when idle** | Po chvíli bez ovládání začne otáčet 3D pohledem. | Zapnuto |
-| **Excluded folders** | Jedna položka na řádek: název vyloučí všechny takto pojmenované složky, cesta jako `Projects/Old` vyloučí jen tuto složku od kořene vaultu; lomítko na začátku či konci se ignoruje. Změna se projeví po opuštění pole; skryté cesty se vynechávají vždy. | `.git`, `.obsidian`, `_templates`, `Clippings`, `node_modules`, `__pycache__` |
+| **Excluded folders** | Jedna položka na řádek: název vyloučí všechny takto pojmenované složky, cesta jako `Projects/Old` vyloučí jen tuto složku od kořene vaultu; lomítko na začátku či konci se ignoruje. Změna se projeví po opuštění pole; skryté cesty se vynechávají vždy. | `_templates`, `Clippings`, `node_modules`, `__pycache__` |
 
 ## Mobil a tablet
 
@@ -89,7 +91,7 @@ Stejný příkaz zapíše geometrii do `Brain-Map-diagnostika.md` v kořeni vaul
 
 ## Changelog
 
-<!-- **0.1.9** - ... -->
+**0.1.9** - Klikací seznamy souborů a vazeb s **Back** a opravy pro kontrolu adresáře pluginů.
 
 **0.1.8** - První veřejná verze.
 

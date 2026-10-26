@@ -8,6 +8,7 @@
 !/tsconfig.json
 !/esbuild.config.mjs
 !/vitest.config.ts
+!/eslint.config.mjs
 !/LICENSE
 !/README.md
 !/versions.json

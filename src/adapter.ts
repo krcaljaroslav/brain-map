@@ -1,7 +1,7 @@
 /**
  * Adaptér vaultu: ze seznamu souborů (vault.getFiles()) a resolvedLinks postaví
  * {nodes, links, stats} ve formátu data.json webu. Sémantika stromu je převzatá
- * z generátoru webu mozek-mapa.py (_walk, SHA256 85356ed3…), aby obě mapy byly stejné:
+ * se stejnými pravidly pro cesty a vazby:
  * položky složky řazené podle jména bez ohledu na velikost písmen, složky a soubory
  * promíchané; skryté a vyloučené složky pryč; list = soubor; složka zůstane, když
  * v podstromu leží jakýkoli soubor; váha složky = počet všech souborů v podstromu.
@@ -36,7 +36,7 @@ export interface VaultProAdapter {
 export type RozliseneVazby = Record<string, Record<string, number>>;
 
 /** Stejná množina jako EXCLUDED_DIRS generátoru webu. */
-export const VYCHOZI_VYLOUCENE_SLOZKY: readonly string[] = ['.git', '.obsidian', '_templates', 'Clippings', 'node_modules', '__pycache__'];
+export const VYCHOZI_VYLOUCENE_SLOZKY: readonly string[] = ['_templates', 'Clippings', 'node_modules', '__pycache__'];
 
 interface Slozka {
   podslozky: Map<string, Slozka>;

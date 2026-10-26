@@ -1,4 +1,4 @@
-import { apiVersion, Notice, Platform, Plugin, TFile } from 'obsidian';
+import { apiVersion, Notice, Platform, Plugin, TFile, normalizePath } from 'obsidian';
 import { postavMapu, type DataMapy } from './src/adapter.ts';
 import { sestavDiagnostiku, ZaznamGeometrie, type ExportGeometrie } from './src/diagnostika.ts';
 import { MozekPohled, TYP_POHLEDU } from './src/pohled.ts';
@@ -98,7 +98,7 @@ export default class MozekMapaPlugin extends Plugin {
       const neznamePohledu = this.nastaveni.sbalene.filter((cesta) => cesta !== '' && !znaPohled(cesta));
       try {
         const zMapy: unknown = JSON.parse(hodnota);
-        if (Array.isArray(zMapy) && neznamePohledu.length) nova = JSON.stringify([...zMapy, ...neznamePohledu]);
+        if (Array.isArray(zMapy) && neznamePohledu.length) nova = JSON.stringify([...(zMapy as unknown[]), ...neznamePohledu]);
       } catch {
         // neplatný JSON odmítne zapisZMapy
       }
@@ -142,7 +142,7 @@ export default class MozekMapaPlugin extends Plugin {
    * takže v data.json skončí poslední změna; API Obsidianu pořadí souběžných saveData negarantuje. Promise doběhne s tímto zápisem.
    */
   ulozNastaveni(): Promise<void> {
-    const snimek: NastaveniMozku = JSON.parse(JSON.stringify(this.nastaveni));
+    const snimek: NastaveniMozku = JSON.parse(JSON.stringify(this.nastaveni)) as NastaveniMozku;
     const zapis = this.frontaZapisu.then(() => this.saveData(snimek)).catch((chyba: unknown) => {
       new Notice(`${t('ulozeniSelhalo')}: ${String(chyba)}`);
     });
@@ -178,10 +178,11 @@ export default class MozekMapaPlugin extends Plugin {
       new Notice(t('exportBezMapy'));
       return null;
     }
-    const cesta = `${slozkaPluginu}/${SOUBOR_DIAGNOSTIKY}`;
+    const cesta = normalizePath(`${slozkaPluginu}/${SOUBOR_DIAGNOSTIKY}`);
     const diagnostika = sestavDiagnostiku(this.app.vault, this.app.metadataCache.resolvedLinks, apiVersion, Platform, this.nastaveni.vylouceneSlozky);
     const geometrie = this.zaznamGeometrie.export();
     diagnostika.geometrie = geometrie;
+    // Plugin configuration files are outside the indexed vault files, so use the Adapter API.
     await this.app.vault.adapter.write(cesta, JSON.stringify(diagnostika));
     const poznamka = await this.zapisPoznamkuGeometrie(geometrie);
     new Notice(t('diagnostikaZapsana', { cesta, poznamka }));
@@ -198,15 +199,26 @@ export default class MozekMapaPlugin extends Plugin {
     // zpětný apostrof v hodnotě (třídy prvků) by ukončil blok kódu; \u0060 je v JSON tentýž znak
     const obsah = `---\n${OZNACENI_GEOMETRIE}: true\n---\n\`\`\`json\n${JSON.stringify(geometrie, null, 1).replace(/`/g, '\\u0060')}\n\`\`\`\n`;
     const { vault } = this.app;
+    const ciziPoznamka = new Error('ciziPoznamka');
     for (let n = 0; ; n++) {
       const nazev = nazevPoznamkyGeometrie(n), soubor = vault.getAbstractFileByPath(nazev);
       if (soubor === null) {
         await vault.create(nazev, obsah);
         return nazev;
       }
-      if (soubor instanceof TFile && jeOznacenaPoznamkaGeometrie(await vault.read(soubor))) {
-        await vault.modify(soubor, obsah);
-        return nazev;
+      if (soubor instanceof TFile) {
+        let zapsano = false;
+        try {
+          await vault.process(soubor, (text) => {
+            // Vrácení stejného textu by i tak vyvolalo zápis do cizí poznámky.
+            if (!jeOznacenaPoznamkaGeometrie(text)) throw ciziPoznamka;
+            zapsano = true;
+            return obsah;
+          });
+        } catch (chyba) {
+          if (chyba !== ciziPoznamka) throw chyba;
+        }
+        if (zapsano) return nazev;
       }
     }
   }

@@ -15,7 +15,7 @@ export interface PluginProPohled {
   hodnotyMapy(): Record<string, string>;
   /** Změna volby z UI mapy (uloz; null = zapomen) do nastavení pluginu a data.json; znaPohled = cesta je ve snímku dat, který mapa dostala. */
   zmenaZMapy(klic: string, hodnota: string | null, znaPohled?: (cesta: string) => boolean): void;
-  /** Záznam geometrie listu pro Export diagnostiky (P7 k2); bez něj pohled nic nezaznamenává. */
+  /** Záznam geometrie listu pro Export diagnostiky ; bez něj pohled nic nezaznamenává. */
   readonly zaznamGeometrie?: ZaznamGeometrie;
 }
 
@@ -23,7 +23,7 @@ export interface PluginProPohled {
  * Otevře poznámku podle přesné cesty z mapy (ne URI). PC: vždy nový list (getLeaf('tab')), list mapy se nepřepíše.
  * Mobil (Platform.isMobile, WBS B3): bez nové záložky, přímo v listu mapy (listMapy = this.leaf pohledu), zpět na mapu vede
  * tlačítko Zpět Obsidianu (historie listu znovu otevře pohled a getState/setState vrátí pohled i výběr, P6). Ne getLeaf(false): ten vrací
- * aktivní navigovatelný list, ne nutně mapu (Codex xcheck A3b k1, nález 4). Bez listu mapy i mobil otevře nový list.
+ * aktivní navigovatelný list, ne nutně mapu . Bez listu mapy i mobil otevře nový list.
  */
 export async function otevriPoznamku(app: App, cesta: string, listMapy: WorkspaceLeaf | null = null): Promise<boolean> {
   const soubor = app.vault.getAbstractFileByPath(cesta);
@@ -89,7 +89,7 @@ export class MozekPohled extends ItemView {
     this.mapa = vytvorMapu(this.contentEl, this.data, { ...this.volbyMapy(), stavPohledu: this.stavKObnoveni });
     this.stavKObnoveni = null;   // předaný jádru: čekající stav odtud drží jádro (stavPohledu)
     this.prostor.zmer();   // stav při otevření: pozorovatel contentEl hlásí až změnu
-    // záznam geometrie pro Export diagnostiky (P7 k2): v paměti pluginu, při události nic nezapisuje
+    // záznam geometrie pro Export diagnostiky : v paměti pluginu, při události nic nezapisuje
     this.odpojGeometrii = this.plugin.zaznamGeometrie?.pripoj(this.contentEl, (cil, typ, fn) => {
       this.registerDomEvent(cil as HTMLElement, typ as keyof HTMLElementEventMap, fn);
     }) ?? null;
@@ -117,7 +117,7 @@ export class MozekPohled extends ItemView {
    * setState dostává ViewStateResult, jehož `history` obsidian.d.ts popisuje jako záznam do historie navigace. Ephemeral state
    * do ViewState nepatří (jen samostatný argument setViewState a OpenViewState.eState), proto ne getEphemeralState.
    * Klíče nejsou volby mozek.*: jen pozice a cesta vybraného uzlu. Před onOpen vrací platný stav čekající ze setState (snímek
-   * historie mezi setState a onOpen ho nesmí vyprázdnit, Codex xcheck P6 k1, nález 3).
+   * historie mezi setState a onOpen ho nesmí vyprázdnit, .
    */
   getState(): Record<string, unknown> {
     const stav = this.mapa?.stavPohledu() ?? platnyStavPohledu(this.stavKObnoveni) ?? this.stavPoZavreni;
