@@ -64,8 +64,8 @@ const PRELET = { podilPodstromu: 1.05, podilRodice: 0.75, minPolomer: 0.02, maxP
 const BLIZKO_CAR = [0.05, 0.2];
 // úvodní záběr: zepředu (jako 2D), kamera tak daleko, aby obal promítnutých bodů zabral tento podíl užší strany
 const PODIL_ZABERU = 0.9;
-// zoom kolečkem a posun zrychlené pro dotykové ovládání: kolečko 2,5× proti vzoru (1,2), posun myší 2×, dvěma prsty 5× (vzor 0,3)
-const RYCHLOST_ROTACE = 1.0, RYCHLOST_ZOOMU = 3.0, RYCHLOST_POSUNU = { mys: 0.6, dotyk: 1.5 };
+// zoom kolečkem a posun zrychlené pro dotykové ovládání: kolečko 2,5× proti vzoru (1,2), posun myší 4× (2× proti 0.1.9), dvěma prsty 5× (vzor 0,3)
+const RYCHLOST_ROTACE = 1.0, RYCHLOST_ZOOMU = 3.0, RYCHLOST_POSUNU = { mys: 1.2, dotyk: 1.5 };
 const ZORNY_UHEL = 60 * Math.PI / 180;
 const PRAH_TAPU = 5;                       // px: menší pohyb mezi stiskem a puštěním je ťuknutí, ne tažení
 const MAX_DPR_TELEFON = 1.5, MAX_DPR = 2;

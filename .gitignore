@@ -5,6 +5,7 @@
 !/styles.css
 !/manifest.json
 !/package.json
+!/package-lock.json
 !/tsconfig.json
 !/esbuild.config.mjs
 !/vitest.config.ts

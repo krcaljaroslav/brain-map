@@ -91,6 +91,8 @@ The same command writes geometry to `Brain-Map-diagnostika.md` at the vault root
 
 ## Changelog
 
+**0.1.10** - In 2D the selected note keeps its highlight and links when you zoom out, right-button panning in 3D is twice as fast on desktop, the palette list is readable on Windows, and releases are built from a lockfile.
+
 **0.1.9** - Clickable file and link lists with **Back**, and fixes for the community directory review.
 
 **0.1.8** - First public version.

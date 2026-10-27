@@ -91,6 +91,8 @@ Stejný příkaz zapíše geometrii do `Brain-Map-diagnostika.md` v kořeni vaul
 
 ## Changelog
 
+**0.1.10** - Ve 2D zůstává zvýraznění a vazby vybrané poznámky na ní i při oddálení, posun pravým tlačítkem ve 3D je na počítači 2× rychlejší, seznam palet je na Windows čitelný a vydání se staví podle lockfile.
+
 **0.1.9** - Klikací seznamy souborů a vazeb s **Back** a opravy pro kontrolu adresáře pluginů.
 
 **0.1.8** - První veřejná verze.

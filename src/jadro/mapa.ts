@@ -1141,8 +1141,9 @@ function bodKrivky(ax: number, ay: number, cx: number, cy: number, bx: number, b
 function kresliVyber(cas: number) {
 	const bezVyberu = () => { zasahyPopiskuVyberu = new Map<number, Obdelnik>(); uzlyPopiskuVyberu = []; klicVrstvyVyberu = ''; return false; };
 	if (vybrany < 0 || !vyberVazby) return bezVyberu();
-	const stred = poziceUzlu(vybrany);
-	if (!stred) return bezVyberu();
+	// Oddálení ponechá výběru vlastní polohu; sbalená větev jej zastoupí nejvyšším sbaleným předkem.
+	const u = kotvaSbaleni(vybrany), s = meritkoZ(u), [x, y] = naObrazovku(px[u], py[u], s);
+	const stred: Viditelny = { id: u, x, y, r: polomerBodu(u) * s, alfa: 1 };
 	const paleta = PALETY[paletaIdx];
 	ctx.globalCompositeOperation = 'source-over';
 	ctx.fillStyle = 'rgba(4,6,16,0.8)';
@@ -1158,7 +1159,10 @@ function kresliVyber(cas: number) {
 		hctx.globalCompositeOperation = 'source-over'; hctx.globalAlpha = 1;
 		hctx.clearRect(0, 0, sirka, vyska);
 		hctx.globalCompositeOperation = 'lighter'; hctx.lineCap = 'round'; hctx.lineJoin = 'round';
-		uzlyPopiskuVyberu = [stred, ...kresliHierarchii(hctx, stred, pozice)];
+		// Hierarchie a její popisky zachovají dosavadní viditelnou kotvu.
+		const hierarchie = poziceUzlu(vybrany);
+		uzlyPopiskuVyberu = hierarchie ? [hierarchie, ...kresliHierarchii(hctx, hierarchie, pozice)] : [];
+		if (hierarchie?.id !== stred.id) uzlyPopiskuVyberu.unshift(stred);
 		hctx.globalCompositeOperation = 'source-over'; hctx.globalAlpha = 1;
 	}
 	ctx.globalAlpha = 1;

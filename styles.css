@@ -174,3 +174,6 @@
 .mozek-koren .mozek-menu-nazev { overflow-wrap: anywhere; }
 .mozek-koren .mozek-menu-cesta, .mozek-koren .mozek-menu-dalsi { color: var(--mozek-tlumeny); font-size: 12px; overflow-wrap: anywhere; }
 .mozek-koren .mozek-menu-dalsi { padding: 8px; }
+/* rozbalený seznam kreslí na PC systém: bez vlastní barvy položek dědí světlý text na světlém pozadí Windows (přejímka 0.1.10);
+   na konci souboru, protože tests/b6-k3.test.ts hlídá, že původní CSS zůstalo beze změny */
+.mozek-koren .nastaveni select option { background-color: var(--mozek-pozadi); color: var(--mozek-text); }

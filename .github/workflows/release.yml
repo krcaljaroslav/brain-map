@@ -34,8 +34,8 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        # There is no package-lock.json in this repository.
-        run: npm install --no-package-lock
+        # package-lock.json is committed; npm ci installs the locked tree.
+        run: npm ci
 
       - name: Build plugin
         run: npm run build
