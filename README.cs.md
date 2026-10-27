@@ -29,13 +29,7 @@ Brain Map kreslí tvůj vault v Obsidianu jako neuronovou síť: složky tvoří
 
 Potřebuješ Obsidian 1.8.7 nebo novější.
 
-**Adresář pluginů:** až v něm bude Brain Map uvedený, otevři **Settings → Community plugins → Browse**, vyhledej **Brain Map**, nainstaluj ho a zapni.
-
-**Ruční instalace:**
-
-1. Stáhni `main.js`, `manifest.json` a `styles.css` z [vydané verze](https://github.com/krcaljaroslav/brain-map/releases).
-2. Ve vaultu vytvoř `.obsidian/plugins/brain-map/` a zkopíruj tam všechny tři soubory. Pokud máš vlastní konfigurační složku, použij ji místo `.obsidian`.
-3. Znovu načti Obsidian a zapni **Brain Map** v **Community plugins**.
+Otevři **Settings → Community plugins → Browse**, vyhledej **Brain Map**, nainstaluj ho a zapni.
 
 ## Ovládání
 

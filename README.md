@@ -29,13 +29,7 @@ Brain Map draws your Obsidian vault like a neural network: folders form branches
 
 Requires Obsidian 1.8.7 or later.
 
-**Plugin directory:** once Brain Map is listed, open **Settings → Community plugins → Browse**, search for **Brain Map**, install it and enable it.
-
-**Manual installation:**
-
-1. Download `main.js`, `manifest.json` and `styles.css` from a [release](https://github.com/krcaljaroslav/brain-map/releases).
-2. Create `.obsidian/plugins/brain-map/` inside your vault and copy all three files there. If you use a custom configuration folder, substitute it for `.obsidian`.
-3. Reload Obsidian and enable **Brain Map** under **Community plugins**.
+Open **Settings → Community plugins → Browse**, search for **Brain Map**, install it and enable it.
 
 ## Controls
 
