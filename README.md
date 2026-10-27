@@ -4,13 +4,17 @@
 
 Brain Map draws your Obsidian vault like a neural network: folders form branches, notes form leaves, and links connect them. Explore the structure in 2D or 3D, find a note by name, and open it from the map.
 
-<img src="assets/brain-map-2d.png" alt="Whole vault map in 2D" width="100%" />
+<a href="assets/brain-map-demo.mp4"><img src="assets/brain-map-demo.webp" alt="Short demo: the whole map, finding a note and flying to its links, a selection in 2D" width="100%" /></a>
 
-<img src="assets/brain-map-settings.png" alt="2D map with the Settings panel and the Coral and amber palette" width="100%" />
+[Watch the 34-second demo video](assets/brain-map-demo.mp4)
 
-<img src="assets/brain-map-selection.png" alt="Selected folder with its links and the selection panel" width="100%" />
+<img src="assets/brain-map-overview.png" alt="Whole demo vault map" width="100%" />
 
-<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map on a phone" width="360" /></p>
+<img src="assets/brain-map-selection.png" alt="Selected note with its links and the selection panel" width="100%" />
+
+<img src="assets/brain-map-search.png" alt="Searching notes by name" width="100%" />
+
+<img src="assets/brain-map-settings.png" alt="3D map with the Settings panel and the Coral and amber palette" width="100%" />
 
 ## Features
 
@@ -65,6 +69,8 @@ Display controls are in the map's **Settings** panel; the plugin settings tab al
 ## Mobile and tablet
 
 Use the touch gestures above on a phone or tablet. Opening a file on mobile replaces the map in the same tab; use Obsidian's Back navigation to return to the saved view and selection. On desktop, files open in a new tab.
+
+<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map on a phone" width="360" /></p>
 
 ## Privacy
 

@@ -4,13 +4,17 @@
 
 Brain Map kreslí tvůj vault v Obsidianu jako neuronovou síť: složky tvoří větve, poznámky listy a odkazy je propojují. Prohlédni si strukturu ve 2D nebo 3D, najdi poznámku podle názvu a otevři ji přímo z mapy.
 
-<img src="assets/brain-map-2d.png" alt="Celá mapa vaultu ve 2D" width="100%" />
+<a href="assets/brain-map-demo.mp4"><img src="assets/brain-map-demo.webp" alt="Krátká ukázka: celá mapa, nalezení poznámky a přelet k jejím vazbám, výběr ve 2D" width="100%" /></a>
 
-<img src="assets/brain-map-settings.png" alt="Mapa ve 2D s panelem Settings a paletou Coral and amber" width="100%" />
+[Pusť si 34sekundové video](assets/brain-map-demo.mp4)
 
-<img src="assets/brain-map-selection.png" alt="Vybraná složka s vazbami a panelem výběru" width="100%" />
+<img src="assets/brain-map-overview.png" alt="Celá mapa ukázkového vaultu" width="100%" />
 
-<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map na telefonu" width="360" /></p>
+<img src="assets/brain-map-selection.png" alt="Vybraná poznámka s vazbami a panelem výběru" width="100%" />
+
+<img src="assets/brain-map-search.png" alt="Hledání poznámek podle názvu" width="100%" />
+
+<img src="assets/brain-map-settings.png" alt="Mapa ve 3D s panelem Settings a paletou Coral and amber" width="100%" />
 
 ## Funkce
 
@@ -65,6 +69,8 @@ Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu
 ## Mobil a tablet
 
 Na telefonu a tabletu používej dotyková gesta popsaná výše. Otevření souboru na mobilu nahradí mapu ve stejné záložce; navigací Zpět v Obsidianu se vrátíš k uloženému záběru a výběru. Na počítači se soubory otevírají v nové záložce.
+
+<p align="center"><img src="assets/brain-map-mobile.png" alt="Brain Map na telefonu" width="360" /></p>
 
 ## Soukromí
 
