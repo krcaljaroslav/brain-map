@@ -1,3 +1,5 @@
+import { barvaTagu, svetlaBarvaTagu, kresliTagy, rozlozTagy3d, type BodTagu, type TagNaPlatne } from './tagy.ts';
+import type { TagMapy } from '../adapter.ts';
 import { vytvorPrvek } from '../dom-prvky.ts';
 import { vychoziTextyMapy } from './texty-mapy.ts';
 type Vektor3 = [number, number, number];
@@ -24,6 +26,8 @@ export function platnaKamera3d(stav: unknown): Kamera3d | null {
 
 // Adaptace webového rendereru: lokální DOM/čas, explicitní lifecycle, bez globální registrace.
 export interface Jadro3d {
+    tagy?: TagMapy[]; vybranyTag?: number;
+    viditelneTagy?(): { uzly: number[]; cary: [number, number][] };
 	platno3d: HTMLCanvasElement;
 	popisky3d: HTMLCanvasElement;
 	registruj: import('./mapa.ts').RegistracePosluchace;
@@ -33,7 +37,7 @@ export interface Jadro3d {
 	pocet: number; rodic: Int32Array; typ: Uint8Array; vaha: Float64Array; jmeno: string[]; cesta: string[]; hloubka: Int32Array; potomci: number[][];
  px: Float64Array; py: Float64Array; smer: Float64Array; tloustka: Float64Array; barvaRgb: number[][]; rozestup: Float64Array; vetev: Int32Array;
  otoceno: boolean; natazeni: number; sbalene: Set<string>; vybrany: number; vazby: number[][]; zavislostiZapnute: boolean;
- paleta: { ven: string; dovnitr: string; vazba: string }; texty?: import('./texty-mapy.ts').TextyMapy;
+ paletaIdx?: number; paleta: { ven: string; dovnitr: string; vazba: string }; texty?: import('./texty-mapy.ts').TextyMapy;
  MAX_KRIVEK: number; POPISEK_OD: number; PREHLED_DO: number; MAX_POPISKU: number; RUST_POPISKU_SE_ZOOMEM: number; PRAH_ROZESTUPU: number; rozpocetPopiskuZaklad(w: number, h: number): number; promitni2d(i: number): number[];
  odchylka(this: void, text: string, sul: string): number; hexNaRgb(hex: string): number[]; rgbNaCss(rgb: number[], alfa: number): string;
  vazbyUzlu(i: number): { ven: Map<number, number>; dovnitr: Map<number, number> };
@@ -557,6 +561,28 @@ function tovarna(j: Jadro3d) {
 	}
 
 	// --- odvozená data podle stavu 2D (sbalení, výběr, paleta, závislosti) ---
+    let bodyTagu: BodTagu[] = [], zdrojTagu: TagMapy[] | undefined, rozlozeniTagu: Rozlozeni3d | undefined;
+    let zasahyTagu: TagNaPlatne[] = [];
+    function pripravTagy() {
+     if (!j.tagy?.length) { bodyTagu = []; return; }
+     if (zdrojTagu !== j.tagy || rozlozeniTagu !== rozlozeni) {
+      bodyTagu = rozlozTagy3d(j.tagy ?? [], rozlozeni.poz); zdrojTagu = j.tagy; rozlozeniTagu = rozlozeni;
+     }
+    }
+    function kresliVrstvaTagu(cas: number) {
+     if (!j.tagy?.length) { zasahyTagu = []; return false; }
+     pripravTagy();
+     const viditelnost = j.viditelneTagy?.() ?? { uzly: [], cary: [] };
+     zasahyTagu = viditelnost.uzly.flatMap(index => {
+      const bod = bodyTagu[index], p = promitniBod(bod.x, bod.y, bod.z);
+      return p ? [{ index: pocet + index, x: p[0], y: p[1], r: Math.max(3, Math.min(18, bod.r * meritkoCss / p[2])), name: j.tagy![index].name, velky: j.tagy![index].notes.length >= 10 || j.vybranyTag === index }] : [];
+     });
+     const cary = viditelnost.cary.flatMap(([tag, note]) => {
+      const bod = bodyTagu[tag], p = promitniBod(bod.x, bod.y, bod.z), k = viditelnaKotva(note);
+      return p && ekrD[k] > 0 ? [{ a: [ekrX[k], ekrY[k]], b: p }] : [];
+     });
+     return kresliTagy(pctx, zasahyTagu, cary, barvaTagu(j.paletaIdx ?? 0), cas, priblizeni(), Math.max(0, rozpocetPopisku() - zasahyPopisku.size - zasahyPopiskuVyberu.size), svetlaBarvaTagu(j.paletaIdx ?? 0));
+    }
 	function prebuduj() {
 		const sbalene = j.sbalene, vybrany = j.vybrany, barvaRgb = j.barvaRgb;
 		if (barvaRgb !== barvaRgbNahrana) obnovBarvyGeometrie();
@@ -670,7 +696,12 @@ function tovarna(j: Jadro3d) {
 		vstup(); pozadujSnimek();
 	}
 	function vzdalenost() { return delka(sub(kam, cil)); }
-	function omezVzdalenost(d: number) { return sevri(d, Math.max(2, rozlozeni.R * 0.01), rozlozeni.R * 8); }
+	function omezVzdalenost(d: number) {
+     let maxR = rozlozeni.R;
+     pripravTagy();
+     for (const index of j.viditelneTagy?.().uzly ?? []) { const bod = bodyTagu[index]; maxR = Math.max(maxR, Math.hypot(bod.x, bod.y, bod.z) + bod.r); }
+     return sevri(d, Math.max(2, rozlozeni.R * 0.01), maxR * 8);
+    }
 	// úvodní záběr: zepředu (osa z, bez elevace), takže se mapa promítá jako 2D neuron; kamera v nejmenší vzdálenosti, při níž obal
 	// všech bodů zabere PODIL_ZABERU užší strany, cíl ve středu obalu (na šířku i na výšku stejně, orientaci už nese 2D rozložení)
 	function vychoziZaber() {
@@ -681,9 +712,12 @@ function tovarna(j: Jadro3d) {
 	// cíl ve středu obalu bodů kolmo na směr pohledu a nejmenší vzdálenost kamery od něj, při níž všechny body leží uvnitř podílu zorného pole
 	function zaberNaVsechnyBody(smer: number[], nahoruV: number[], podil: number) {
 		const f = nasob(jednotkovy(smer), -1), bok = jednotkovy(kriz(f, nahoruV)), n = kriz(bok, f);
-		const ty = Math.tan(ZORNY_UHEL / 2) * podil, tx = ty * sirka / Math.max(1, vyska), p = rozlozeni.poz;
+		const ty = Math.tan(ZORNY_UHEL / 2) * podil, tx = ty * sirka / Math.max(1, vyska), p = Array.from(rozlozeni.poz);
+        pripravTagy();
+        for (const index of j.viditelneTagy?.().uzly ?? []) { const bod = bodyTagu[index]; p.push(bod.x, bod.y, bod.z); }
+        const pocetBodu = p.length / 3;
 		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-		for (let i = 0; i < pocet; i++) {
+		for (let i = 0; i < pocetBodu; i++) {
 			const q = [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]], x = skalar(q, bok), y = skalar(q, n);
 			x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
 		}
@@ -691,13 +725,13 @@ function tovarna(j: Jadro3d) {
 		// perspektiva posouvá střed promítnutého obalu proti středu světového: pár iterací posune cíl podle promítnuté nesouměrnosti
 		for (let krok = 0; krok < 4; krok++) {
 			d = 1;
-			for (let i = 0; i < pocet; i++) {
+			for (let i = 0; i < pocetBodu; i++) {
 				const rel = [p[i * 3] - cil[0], p[i * 3 + 1] - cil[1], p[i * 3 + 2] - cil[2]];
 				const z = -skalar(rel, f), x = Math.abs(skalar(rel, bok)), y = Math.abs(skalar(rel, n));
 				d = Math.max(d, z + x / tx, z + y / ty);
 			}
 			let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-			for (let i = 0; i < pocet; i++) {
+			for (let i = 0; i < pocetBodu; i++) {
 				const rel = [p[i * 3] - cil[0], p[i * 3 + 1] - cil[1], p[i * 3 + 2] - cil[2]], h = Math.max(1, d + skalar(rel, f));
 				const u = skalar(rel, bok) / h, v = skalar(rel, n) / h;
 				u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
@@ -810,6 +844,11 @@ function tovarna(j: Jadro3d) {
 	}
 	// přelet k bodu: cíl je viditelný zástupce uzlu, směr pohledu zůstane, natočí se o 15° v azimutu; po doletu hned kroužení
 	function preletKUzlu(i: number) {
+        if (i >= pocet) {
+         pripravTagy(); const bod = bodyTagu[i - pocet]; if (!bod) return;
+         const p = [bod.x, bod.y, bod.z], d = Math.max(80, rozlozeni.R * 0.25);
+         zacniPrelet(add(p, nasob(jednotkovy(sub(kam, cil)), d)), p, 900, () => naplanujKlid()); return;
+        }
 		const k = viditelnaKotva(i), p = poziceUzlu(k);
 		const d = vzdalenostDosednuti(k);
 		let smer = sub(kam, p);
@@ -834,6 +873,7 @@ function tovarna(j: Jadro3d) {
 	// Detail (přelet na kotvu výběru) viditelně změní záběr : vzdálenost dosednutí jiná o víc než 1 % (tolerance
 	// jeCelek), nebo kotva od středu dál než 1 % menšího rozměru plochy (cíl kamery se promítá do středu); natočení o azimut se nepočítá
 	function detailZmeniZaber(i: number) {
+        if (i >= pocet) return true;
 		if (!rozlozeni) return false;
 		const k = viditelnaKotva(i), d = vzdalenost();
 		if (Math.abs(vzdalenostDosednuti(k) - d) > d * 0.01) return true;
@@ -893,7 +933,9 @@ function tovarna(j: Jadro3d) {
 			ekrR[i] = rozlozeni.polomerSveta[i] * meritkoCss / q[2];
 		}
 	}
-	function promitni(i: number) { spocitejMatice(); promitniVse(); return ekrD[i] > 0 ? { x: ekrX[i], y: ekrY[i], d: ekrD[i], r: ekrR[i] } : null; }
+	function promitni(i: number) {
+        if (i >= pocet) { pripravTagy(); spocitejMatice(); const bod = bodyTagu[i - pocet]; if (!bod) return null; const p = promitniBod(bod.x, bod.y, bod.z); return p ? { x: p[0], y: p[1], d: p[2], r: bod.r } : null; }
+        spocitejMatice(); promitniVse(); return ekrD[i] > 0 ? { x: ekrX[i], y: ekrY[i], d: ekrD[i], r: ekrR[i] } : null; }
 	function jasMlhy(d: number) { const [m0, m1] = mlha(); return 1 - 0.65 * sevri((d - m0) / (m1 - m0), 0, 1); }
 	function mlha() { const d = vzdalenost(), R = rozlozeni.R; return [Math.max(1, d - R * 0.4), d + R * 1.1]; }
 	// přiblížení proti úvodnímu záběru (obdoba pohled.k / kFit ve 2D): rozpočet popisků s ním roste, do PREHLED_DO platí přehledová pravidla
@@ -1028,6 +1070,7 @@ function tovarna(j: Jadro3d) {
 	function zasah(x: number, y: number) {
 		if (!rozlozeni || !stav) return -1;
 		spocitejMatice(); promitniVse();
+        for (const bod of zasahyTagu) if (Math.hypot(x - bod.x, y - bod.y) <= Math.max(14, bod.r + 6)) return bod.index;
 		for (const [id, o] of zasahyPopiskuVyberu) if (x >= o.x0 && x <= o.x1 && y >= o.y0 && y <= o.y1) return id;
 		let nej = -1, nejD = Infinity;
 		for (let i = 0; i < pocet; i++) {
@@ -1155,6 +1198,7 @@ function tovarna(j: Jadro3d) {
 		spocitejAlfy();
 		kresliGl(cas);
 		kresliPopisky();
+        if (kresliVrstvaTagu(cas)) dalsi = true;
 		j.zmerSnimek?.(zacatek);
 		if (impulzy.length) dalsi = true;
 		snimku++;
@@ -1247,7 +1291,7 @@ function tovarna(j: Jadro3d) {
 			e.stopPropagation();
 			shift = e.shiftKey;
 			if ('wasdqe'.includes(k) && k.length === 1) { stisknute.add(k); vstup(); pozadujSnimek(); e.preventDefault(); }
-			else if (k === 'f') { if (j.vybrany >= 0) letNa(j.vybrany); e.preventDefault(); }
+			else if (k === 'f') { if ((j.vybranyTag ?? -1) >= 0) letNa(pocet + j.vybranyTag!); else if (j.vybrany >= 0) letNa(j.vybrany); e.preventDefault(); }
 			else if (k === 'r') { vstup(); celek(); e.preventDefault(); }
 			else if (k === 'escape') { j.vyber(-1); e.preventDefault(); }
 		});
@@ -1355,6 +1399,7 @@ function tovarna(j: Jadro3d) {
 		stavKamery, obnovKameru, zapni, vypni, destroy, pozastav, obnovVelikost, zneplatni, zmenData, letNa, celek, pozadujSnimek, zmenVelikost, nastavKrouzeni, get krouzeni() { return krouzeniZapnute; },
 		// Diagnostika patří instanci, bez vazby na hash celého okna.
 		ladeni: {
+			get tagy() { return { body: bodyTagu, zasahy: zasahyTagu }; },
 			get pozice() { return rozlozeni ? Array.from(rozlozeni.poz) : null; },
 			get pripraveno() { return aktivni && !!rozlozeni && !!stav; }, get rozlozeniMs() { return rozlozeniMs; }, get R() { return rozlozeni ? rozlozeni.R : 0; },
 			get kamera() { return { kam: kam.slice(), cil: cil.slice(), nahoru: nahoru.slice(), vzdalenost: rozlozeni ? vzdalenost() : 0 }; },

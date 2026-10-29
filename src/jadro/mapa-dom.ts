@@ -42,6 +42,7 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 				tlacitko('pohled-2d', '2D', { 'aria-pressed': 'true' }), tlacitko('pohled-3d', '3D', { 'aria-pressed': 'false' }),
 			]), el('span', { klic: 'pohled-info', class: 'napoveda' })]),
 			el('label', { class: 'prepinac' }, [el('input', { klic: 'zavislosti', type: 'checkbox' }), ` ${t.zavislosti} `, el('span', { klic: 'zavislosti-info', class: 'info' })]),
+			el('div', { class: 'radek' }, [prepinac('tagLinks', t.tagLinks), prepinac('allTags', t.allTags)]),
 			prepinac('ostatni', t.ostatni),
 			prepinac('hloubka', t.hloubka, { checked: true }, 'prepinac jen-2d'),
 			prepinac('krouzeni', t.krouzeni, { checked: true }, 'prepinac jen-3d'),

@@ -12,6 +12,10 @@ export interface TextyMapy {
 	nastaveni: string;
 	pohled: string;
 	zavislosti: string;
+	tagLinks: string;
+	allTags: string;
+	tags: string;
+	notes: string;
 	ostatni: string;
 	hloubka: string;
 	krouzeni: string;
@@ -63,6 +67,10 @@ export function vychoziTextyMapy(): TextyMapy {
   nastaveni: 'Settings',
   pohled: 'View',
   zavislosti: 'Dependencies',
+  tagLinks: 'Tag links',
+  allTags: 'All tags',
+  tags: 'Tags',
+  notes: 'Notes',
   ostatni: 'Other files',
   hloubka: 'Depth (3D)',
   krouzeni: 'Orbit when idle',

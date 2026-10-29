@@ -12,6 +12,9 @@ export interface NastaveniMozku {
   paleta: number;
   hloubka: boolean;
   zavislosti: boolean;
+  tagLinks: boolean;
+  allTags: boolean;
+  vylouceneTagy: string[];
   /** F9 ostatní soubory, výchozí vypnuto (uzly typu 2 dodá adaptér až v B3c). */
   ostatni: boolean;
   krouzeni: boolean;
@@ -30,6 +33,9 @@ export function vychoziNastaveni(): NastaveniMozku {
     paleta: 0,
     hloubka: true,
     zavislosti: false,
+    tagLinks: false,
+    allTags: false,
+    vylouceneTagy: [],
     ostatni: false,
     krouzeni: true,
     vylouceneSlozky: [...VYCHOZI_VYLOUCENE_SLOZKY],
@@ -43,6 +49,8 @@ export const KLIC_MAPY = {
   paleta: 'mozek.paleta',
   sbalene: 'mozek.sbalene',
   zavislosti: 'mozek.zavislosti',
+  tagLinks: 'mozek.tagLinks',
+  allTags: 'mozek.allTags',
   hloubka: 'mozek.hloubka',
   pohled: 'mozek.pohled',
   krouzeni: 'mozek.krouzeni',
@@ -54,6 +62,8 @@ function jePoleRetezcu(hodnota: unknown): hodnota is string[] {
 }
 
 /** Řádky textového pole: oříznuté, bez prázdných, bez lomítek na krajích, bez duplicit. */
+export function radkyTagu(text: string): string[] { return [...new Set(text.split('\n').map(radek => radek.trim().replace(/^#/, '').toLowerCase()).filter(Boolean))]; }
+
 export function radkyVyloucenych(text: string): string[] {
   const radky = text.split('\n').map((radek) => radek.trim().replace(/^\/+|\/+$/g, '')).filter((radek) => radek.length > 0);
   return [...new Set(radky)];
@@ -65,8 +75,9 @@ export function nactiNastaveni(ulozena: unknown): NastaveniMozku {
   if (!ulozena || typeof ulozena !== 'object') return vysledek;
   const d = ulozena as Record<string, unknown>;
   if (typeof d.paleta === 'number' && Number.isInteger(d.paleta) && d.paleta >= 0 && d.paleta < POCET_PALET) vysledek.paleta = d.paleta;
-  for (const klic of ['hloubka', 'zavislosti', 'ostatni', 'krouzeni'] as const) if (typeof d[klic] === 'boolean') vysledek[klic] = d[klic];
+  for (const klic of ['hloubka', 'zavislosti', 'ostatni', 'krouzeni', 'tagLinks', 'allTags'] as const) if (typeof d[klic] === 'boolean') vysledek[klic] = d[klic];
   if (jePoleRetezcu(d.vylouceneSlozky)) vysledek.vylouceneSlozky = radkyVyloucenych(d.vylouceneSlozky.join('\n'));
+  if (jePoleRetezcu(d.vylouceneTagy)) vysledek.vylouceneTagy = radkyTagu(d.vylouceneTagy.join('\n'));
   if (jePoleRetezcu(d.sbalene)) vysledek.sbalene = [...new Set(d.sbalene)];
   if (d.pohled === '2d' || d.pohled === '3d') vysledek.pohled = d.pohled;
   return vysledek;
@@ -78,6 +89,8 @@ export function hodnotyMapy(n: NastaveniMozku): Record<string, string> {
     [KLIC_MAPY.paleta]: String(n.paleta),
     [KLIC_MAPY.sbalene]: JSON.stringify(n.sbalene),
     [KLIC_MAPY.zavislosti]: n.zavislosti ? '1' : '0',
+    [KLIC_MAPY.tagLinks]: n.tagLinks ? '1' : '0',
+    [KLIC_MAPY.allTags]: n.allTags ? '1' : '0',
     [KLIC_MAPY.hloubka]: n.hloubka ? '1' : '0',
     [KLIC_MAPY.pohled]: n.pohled,
     [KLIC_MAPY.krouzeni]: n.krouzeni ? '1' : '0',
@@ -101,7 +114,7 @@ function cestyZJson(hodnota: string): string[] | null {
 export function zapisZMapy(n: NastaveniMozku, klic: string, hodnota: string | null): boolean {
   const vychozi = vychoziNastaveni();
   const pred = JSON.stringify(n);
-  const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni') => {
+  const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni' | 'tagLinks' | 'allTags') => {
     if (hodnota === null) n[nazev] = vychozi[nazev];
     else if (hodnota === '1' || hodnota === '0') n[nazev] = hodnota === '1';
   };
@@ -120,6 +133,8 @@ export function zapisZMapy(n: NastaveniMozku, klic: string, hodnota: string | nu
       if (hodnota === null) n.pohled = vychozi.pohled;
       else if (hodnota === '2d' || hodnota === '3d') n.pohled = hodnota;
       break;
+    case KLIC_MAPY.tagLinks: prepinac('tagLinks'); break;
+    case KLIC_MAPY.allTags: prepinac('allTags'); break;
     case KLIC_MAPY.hloubka: prepinac('hloubka'); break;
     case KLIC_MAPY.zavislosti: prepinac('zavislosti'); break;
     case KLIC_MAPY.ostatni: prepinac('ostatni'); break;
@@ -152,7 +167,7 @@ export class MozekNastaveniTab extends PluginSettingTab {
   }
 
   getSettingDefinitions(): SettingDefinitionRender[] {
-    const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni', titulek: string, popis: string): SettingDefinitionRender => ({
+    const prepinac = (nazev: 'hloubka' | 'zavislosti' | 'ostatni' | 'krouzeni' | 'tagLinks' | 'allTags', titulek: string, popis: string): SettingDefinitionRender => ({
       name: titulek, desc: popis,
       render: (radek) => { radek.addToggle((volba) => {
         volba.setValue(this.plugin.nastaveni[nazev]).onChange((hodnota) => this.plugin.zmenNastaveni({ [nazev]: hodnota }));
@@ -167,6 +182,11 @@ export class MozekNastaveniTab extends PluginSettingTab {
       prepinac('zavislosti', t('zavislosti'), t('zavislostiPopis')),
       prepinac('ostatni', t('ostatni'), t('ostatniPopis')),
       prepinac('krouzeni', t('krouzeni'), t('krouzeniPopis')),
+      { name: t('vylouceneTagy'), desc: t('vylouceneTagyPopis'), render: (radek) => { radek.addTextArea((pole) => {
+        pole.setValue(this.plugin.nastaveni.vylouceneTagy.join('\n')).onChange((text) => this.plugin.zmenNastaveni({ vylouceneTagy: radkyTagu(text) }, false));
+        pole.inputEl.rows = 6;
+        pole.inputEl.addEventListener('blur', () => this.plugin.promitniVyloucene());
+      }); } },
       { name: t('vyloucene'), desc: t('vyloucenePopis'), render: (radek) => { radek.addTextArea((pole) => {
         pole.setValue(this.plugin.nastaveni.vylouceneSlozky.join('\n')).onChange((text) => this.plugin.zmenNastaveni({ vylouceneSlozky: radkyVyloucenych(text) }, false));
         pole.inputEl.rows = 6;

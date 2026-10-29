@@ -15,11 +15,17 @@ export const TYP_OSTATNI = 2;
 export type Uzel = [parent: number | null, name: string, type: typeof TYP_SLOZKA | typeof TYP_POZNAMKA | typeof TYP_OSTATNI, weight: number, path: string];
 export type Vazba = [zdroj: number, cil: number];
 
+export interface TagMapy { key: string; name: string; notes: number[] }
+export type ZdrojTagu = (soubor: SouborVaultu) => readonly string[] | null;
+
+export function klicTagu(tag: string): string { return tag.trim().replace(/^#/, '').toLowerCase(); }
+
 export interface DataMapy {
   vault: string;
   fields: ['parent', 'name', 'type', 'weight', 'path'];
   nodes: Uzel[];
   links: Vazba[];
+  tags?: TagMapy[];
   stats: { nodes: number; folders: number; files: number; other?: number; links: number };
 }
 
@@ -169,7 +175,7 @@ function sestavVazby(resolvedLinks: RozliseneVazby, indexSouboru: Map<string, nu
   return [...klice].sort((a, b) => a - b).map((klic) => [Math.floor(klic / pocetUzlu), klic % pocetUzlu]);
 }
 
-export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby, vylouceneSlozky: readonly string[] = VYCHOZI_VYLOUCENE_SLOZKY, ostatni = false): DataMapy {
+export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby, vylouceneSlozky: readonly string[] = VYCHOZI_VYLOUCENE_SLOZKY, ostatni = false, zdrojTagu?: ZdrojTagu, vylouceneTagy: readonly string[] = []): DataMapy {
   const vyloucene = new Set(vylouceneSlozky);
   const koren = zaradSoubory(vault.getFiles().map((soubor) => soubor.path), vyloucene);
   const uzly: Uzel[] = [[null, vault.getName() || 'vault', TYP_SLOZKA, 0, '']];
@@ -181,6 +187,7 @@ export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby
     fields: ['parent', 'name', 'type', 'weight', 'path'],
     nodes: uzly,
     links: vazby,
+    ...(zdrojTagu ? { tags: sestavTagy(vault.getFiles(), indexSouboru, zdrojTagu, vylouceneTagy) } : {}),
     stats: {
       nodes: uzly.length,
       folders: uzly.length - indexSouboru.size,
@@ -189,4 +196,26 @@ export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby
       links: vazby.length,
     },
   };
+}
+
+function sestavTagy(soubory: SouborVaultu[], indexy: Map<string, number>, zdroj: ZdrojTagu, vyloucene: readonly string[]): TagMapy[] {
+  const zakazane = new Set(vyloucene.map(klicTagu));
+  const tagy = new Map<string, { notes: Set<number>; zapisy: Map<string, number> }>();
+  for (const soubor of soubory) {
+    const index = indexy.get(soubor.path);
+    if (index === undefined || !jePoznamka(soubor.path)) continue;
+    const zapisySouboru = new Set(zdroj(soubor) ?? []);
+    for (const zapis of zapisySouboru) {
+      const key = klicTagu(zapis);
+      if (!key || zakazane.has(key)) continue;
+      const tag = tagy.get(key) ?? { notes: new Set<number>(), zapisy: new Map<string, number>() };
+      tag.notes.add(index);
+      const name = '#' + zapis.trim().replace(/^#/, '');
+      tag.zapisy.set(name, (tag.zapisy.get(name) ?? 0) + 1);
+      tagy.set(key, tag);
+    }
+  }
+  return [...tagy].sort(([a], [b]) => porovnejJmena(a, b)).map(([key, tag]) => ({
+    key, name: [...tag.zapisy].sort((a, b) => b[1] - a[1] || porovnejJmena(a[0], b[0]))[0][0], notes: [...tag.notes].sort((a, b) => a - b),
+  }));
 }

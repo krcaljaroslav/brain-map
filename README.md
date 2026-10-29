@@ -28,6 +28,7 @@ Brain Map draws your Obsidian vault like a neural network: folders form branches
 | Link highlight | Selecting a node draws its outgoing and incoming links in two colours, with pulses in the link direction, even with **Dependencies** off. |
 | Other files | Optionally includes PDFs, images and other files, with links from notes. |
 | Colours | Choose **Aurora**, **Neon night**, or **Coral and amber**. |
+| Tags | Tags from frontmatter and inline `#tags` (case-insensitive, nested `#a/b` is one tag). The selection panel lists a note's tags; a selected tag shows its notes, with fly-to and **Back**. On the map, tags sit just outside the map's outline in 2D and around it in 3D, linked in crimson. Search offers tags too; a query starting with `#` finds only tags. |
 
 ## Installation
 
@@ -54,7 +55,7 @@ Open **Settings → Community plugins → Browse**, search for **Brain Map**, in
 
 ## Settings
 
-Display controls are in the map's **Settings** panel; the plugin settings tab also includes **Excluded folders**. The interface is in English.
+Display controls are in the map's **Settings** panel; the plugin settings tab also includes **Excluded folders** and **Excluded tags**. The interface is in English.
 
 | Setting | What it does | Default |
 |---------|--------------|---------|
@@ -64,7 +65,10 @@ Display controls are in the map's **Settings** panel; the plugin settings tab al
 | **Dependencies** | Shows links between notes and, with **Other files** enabled, links to those files. | Off |
 | **Other files** | Includes files other than Markdown notes. | Off |
 | **Orbit when idle** | Rotates the 3D view after a period without input. | On |
+| **Tag links** | When a note is selected, shows only its tags and the links to them. | Off |
+| **All tags** | Shows every tag on the map; links appear only for the selected node. | Off |
 | **Excluded folders** | One per line: a name excludes folders of that name anywhere; a path such as `Projects/Old` excludes only that folder from the vault root; a leading or trailing slash is ignored. Applies when you leave the field; hidden paths are always excluded. | `_templates`, `Clippings`, `node_modules`, `__pycache__` |
+| **Excluded tags** | One tag per line, without `#`; excluded tags disappear from the map, search and the panel. | Empty |
 
 ## Mobile and tablet
 
@@ -90,6 +94,8 @@ The same command writes geometry to `Brain-Map-diagnostika.md` at the vault root
 - 3D requires WebGL. If it is unavailable, the map stays in 2D.
 
 ## Changelog
+
+**0.2.0** - Tags on the map: from frontmatter and inline `#tags`, with **Tag links** and **All tags** in Settings, tags in search and in the selection panel, and **Excluded tags** in the plugin settings. Tags follow the shape of the map in 2D and 3D and are linked in crimson.
 
 **0.1.10** - In 2D the selected note keeps its highlight and links when you zoom out, right-button panning in 3D is twice as fast on desktop, the palette list is readable on Windows, and releases are built from a lockfile.
 

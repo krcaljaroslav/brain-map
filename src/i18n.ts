@@ -28,6 +28,8 @@ const EN = {
   ostatniPopis: 'Adds files that are not notes to the map as well (PDF, images…).',
   krouzeni: 'Orbit when idle',
   krouzeniPopis: 'After a while without input, the 3D view rotates on its own.',
+  vylouceneTagy: 'Excluded tags',
+  vylouceneTagyPopis: 'One tag per line, # optional. Exact match, ignoring case. Applied when you leave the field.',
   vyloucene: 'Excluded folders',
   vyloucenePopis: 'One per line. A name without a slash excludes every folder of that name, with a slash only that path from the vault root. Applied when you leave the field.',
 };

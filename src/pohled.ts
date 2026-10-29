@@ -56,6 +56,7 @@ export function vazbyKeStejnemuStromu(stara: DataMapy, nova: DataMapy): Vazba[] 
 export class MozekPohled extends ItemView {
   private mapa: InstanceMapy | null = null;
   private data: DataMapy | null = null;
+  private cekajiciZmena: { okno: Window; id: number } | null = null;
   /** setState před onOpen (na pořadí volání hostitele se nespoléhá) a poslední stav jádra pro getState po onClose. */
   private stavKObnoveni: unknown = null;
   private stavPoZavreni: StavPohledu | null = null;
@@ -96,12 +97,18 @@ export class MozekPohled extends ItemView {
     // drill bod 4: snímek vaultu při otevření + Obnovit; živá aktualizace stromu je F7
     this.addAction('refresh-cw', t('obnovit'), () => { this.obnov(); });
     this.registerEvent(this.app.metadataCache.on('resolved', () => this.prestavVazby()));
+    this.registerEvent(this.app.metadataCache.on('changed', () => {
+      this.zrusCekajiciZmenu();
+      const okno = this.contentEl.ownerDocument.defaultView;
+      if (okno) this.cekajiciZmena = { okno, id: okno.setTimeout(() => { this.cekajiciZmena = null; this.prestavVazby(); }, 300) };
+    }));
     // skrytý list (jiná záložka, sbalený panel): nulovou plochu vidí jádro přes ResizeObserver, hostitel k tomu hlásí viditelnost listu
     this.registerEvent(this.app.workspace.on('layout-change', () => this.hlasViditelnost()));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.hlasViditelnost()));
   }
 
   async onClose(): Promise<void> {
+    this.zrusCekajiciZmenu();
     this.stavPoZavreni = this.mapa?.stavPohledu() ?? this.stavPoZavreni;
     this.odpojGeometrii?.();
     this.odpojGeometrii = null;
@@ -131,13 +138,24 @@ export class MozekPohled extends ItemView {
     else this.stavKObnoveni = state;
   }
 
+  private zrusCekajiciZmenu(): void {
+    if (this.cekajiciZmena !== null) this.cekajiciZmena.okno.clearTimeout(this.cekajiciZmena.id);
+    this.cekajiciZmena = null;
+  }
+
   /** Po onClose je mapa null, takže pozdní událost resolved nic nekreslí. */
   prestavVazby(): void {
+    this.zrusCekajiciZmenu();
     if (!this.mapa || !this.data) return;
     const nova = this.plugin.postavData();
     const vazby = vazbyKeStejnemuStromu(this.data, nova);
-    if (!vazby || JSON.stringify(vazby) === JSON.stringify(this.data.links)) return;
-    this.data = { ...this.data, links: vazby };
+    if (!vazby) return;
+    const stareIndexy = new Map(this.data.nodes.map((uzel, index) => [uzel[4], index]));
+    const tags = nova.tags?.map(tag => ({ ...tag, notes: tag.notes.map(index => stareIndexy.get(nova.nodes[index][4])).filter((index): index is number => index !== undefined) })).filter(tag => tag.notes.length);
+    const zmenaTagu = JSON.stringify(tags ?? []) !== JSON.stringify(this.data.tags ?? []);
+    if (zmenaTagu) this.mapa.nastavTagy(tags ?? []);
+    if (!zmenaTagu && JSON.stringify(vazby) === JSON.stringify(this.data.links)) return;
+    this.data = { ...this.data, links: vazby, tags };
     this.mapa.nastavVazby(vazby);
   }
 
@@ -147,6 +165,7 @@ export class MozekPohled extends ItemView {
    * indexoval), se po doplnění souborů sbalí. Neplatná data nechají mapu nad starými daty a ohlásí se. Vrací, zda proběhlo.
    */
   obnov(): boolean {
+    this.zrusCekajiciZmenu();
     if (!this.mapa) return false;
     const nova = this.plugin.postavData();
     try {

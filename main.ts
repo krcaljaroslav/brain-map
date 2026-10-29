@@ -1,4 +1,4 @@
-import { apiVersion, Notice, Platform, Plugin, TFile, normalizePath } from 'obsidian';
+import { getAllTags, apiVersion, Notice, Platform, Plugin, TFile, normalizePath } from 'obsidian';
 import { postavMapu, type DataMapy } from './src/adapter.ts';
 import { sestavDiagnostiku, ZaznamGeometrie, type ExportGeometrie } from './src/diagnostika.ts';
 import { MozekPohled, TYP_POHLEDU } from './src/pohled.ts';
@@ -41,7 +41,7 @@ export default class MozekMapaPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.nastaveni = nactiNastaveni(await this.loadData());
-    this.promitnuteVyloucene = JSON.stringify(this.nastaveni.vylouceneSlozky);
+    this.promitnuteVyloucene = JSON.stringify([this.nastaveni.vylouceneSlozky, this.nastaveni.vylouceneTagy]);
     this.registerView(TYP_POHLEDU, (leaf) => new MozekPohled(leaf, this));
     this.addRibbonIcon('brain', t('nazevPohledu'), () => { void this.otevriMapu(); });
     this.addCommand({
@@ -68,7 +68,11 @@ export default class MozekMapaPlugin extends Plugin {
 
   /** Data mapy z vaultu; vyloučené složky z nastavení odfiltruje adaptér před sestavením stromu. */
   postavData(): DataMapy {
-    return postavMapu(this.app.vault, this.app.metadataCache.resolvedLinks, this.nastaveni.vylouceneSlozky, true);
+    return postavMapu(this.app.vault, this.app.metadataCache.resolvedLinks, this.nastaveni.vylouceneSlozky, true, (soubor) => {
+      const skutecnySoubor = this.app.vault.getAbstractFileByPath(soubor.path);
+      const cache = skutecnySoubor instanceof TFile ? this.app.metadataCache.getFileCache(skutecnySoubor) : null;
+      return cache ? getAllTags(cache) : null;
+    }, this.nastaveni.vylouceneTagy);
   }
 
   /**
@@ -120,7 +124,7 @@ export default class MozekMapaPlugin extends Plugin {
 
   /** Vyloučené složky do otevřených map přes nastavData (Obnovit), jen když se od posledního promítnutí změnily. */
   promitniVyloucene(): void {
-    const klic = JSON.stringify(this.nastaveni.vylouceneSlozky);
+    const klic = JSON.stringify([this.nastaveni.vylouceneSlozky, this.nastaveni.vylouceneTagy]);
     if (klic === this.promitnuteVyloucene) return;
     this.promitnuteVyloucene = klic;
     this.obnovMapy();

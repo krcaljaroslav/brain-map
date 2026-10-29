@@ -28,6 +28,7 @@ Brain Map kreslí tvůj vault v Obsidianu jako neuronovou síť: složky tvoří
 | Zvýraznění vazeb | Vybraný uzel ukáže odchozí a příchozí odkazy ve dvou barvách s pulzy ve směru odkazu, i když je **Dependencies** vypnuté. |
 | Další soubory | Volitelně zahrne PDF, obrázky a další soubory i s odkazy z poznámek. |
 | Barvy | Vyber si **Aurora**, **Neon night** nebo **Coral and amber**. |
+| Tagy | Tagy z frontmatteru i z textu (`#tag`), bez ohledu na velikost písmen, vnořený `#a/b` je jeden tag. Panel výběru ukáže tagy poznámky, vybraný tag ukáže své poznámky s přeletem a **Back**. Na mapě leží tagy těsně za obrysem mapy ve 2D a kolem ní ve 3D, vazby k nim jsou karmínové. Hledání nabízí i tagy, dotaz začínající `#` najde jen tagy. |
 
 ## Instalace
 
@@ -54,7 +55,7 @@ Otevři **Settings → Community plugins → Browse**, vyhledej **Brain Map**, n
 
 ## Nastavení
 
-Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu navíc obsahuje **Excluded folders**. Rozhraní je anglicky.
+Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu navíc obsahuje **Excluded folders** a **Excluded tags**. Rozhraní je anglicky.
 
 | Nastavení | Co dělá | Výchozí hodnota |
 |-----------|---------|-----------------|
@@ -64,7 +65,10 @@ Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu
 | **Dependencies** | Zobrazuje odkazy mezi poznámkami a při zapnutém **Other files** i odkazy na další soubory. | Vypnuto |
 | **Other files** | Zahrne i jiné soubory než Markdown poznámky. | Vypnuto |
 | **Orbit when idle** | Po chvíli bez ovládání začne otáčet 3D pohledem. | Zapnuto |
+| **Tag links** | Po výběru poznámky ukáže jen její tagy a vazby k nim. | Vypnuto |
+| **All tags** | Ukáže na mapě všechny tagy, vazby jen u vybraného uzlu. | Vypnuto |
 | **Excluded folders** | Jedna položka na řádek: název vyloučí všechny takto pojmenované složky, cesta jako `Projects/Old` vyloučí jen tuto složku od kořene vaultu; lomítko na začátku či konci se ignoruje. Změna se projeví po opuštění pole; skryté cesty se vynechávají vždy. | `_templates`, `Clippings`, `node_modules`, `__pycache__` |
+| **Excluded tags** | Jeden tag na řádek, bez `#`; vyloučené tagy zmizí z mapy, hledání i panelu. | Prázdné |
 
 ## Mobil a tablet
 
@@ -90,6 +94,8 @@ Stejný příkaz zapíše geometrii do `Brain-Map-diagnostika.md` v kořeni vaul
 - 3D potřebuje WebGL. Když není dostupné, mapa zůstane ve 2D.
 
 ## Changelog
+
+**0.2.0** - Tagy na mapě: z frontmatteru i z textu (`#tag`), volby **Tag links** a **All tags** v Settings, tagy v hledání a v panelu výběru a **Excluded tags** v nastavení pluginu. Tagy kopírují tvar mapy ve 2D i 3D a vazby k nim jsou karmínové.
 
 **0.1.10** - Ve 2D zůstává zvýraznění a vazby vybrané poznámky na ní i při oddálení, posun pravým tlačítkem ve 3D je na počítači 2× rychlejší, seznam palet je na Windows čitelný a vydání se staví podle lockfile.
 
