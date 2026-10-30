@@ -109,3 +109,18 @@ export function vychoziTextyMapy(): TextyMapy {
 
  };
 }
+
+export interface TextyHistorie {
+	historie: string;
+	historieStop: string;
+	historieVarovani: string;
+	historieStitek(cas: number, pocet: number): string;
+}
+export function vychoziTextyHistorie(): TextyHistorie {
+ return {
+  historie: 'Play vault history (Space pauses)',
+  historieStop: 'Stop vault history',
+  historieVarovani: 'Most files share the same creation day. These dates may not reflect the actual vault history.',
+  historieStitek: (cas, pocet) => `${new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(cas)} · ${new Intl.NumberFormat('en').format(pocet)} ${pocet === 1 ? 'file' : 'files'}`,
+ };
+}

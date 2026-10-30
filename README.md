@@ -51,6 +51,7 @@ Open **Settings → Community plugins → Browse**, search for **Brain Map**, in
 | Browse files and links | Click or tap a count in the selection panel, then an entry. **Back** returns to the previous node; **Clear selection** clears this history. Esc or a click outside the list closes it. |
 | Search (2D / 3D) | Type at least two characters in **Search notes**; select a result or press Enter for the first one. |
 | Return to an overview or detail | **Overview** shows the whole map. With the whole map in view and a node selected, the button turns into **Detail** and flies back to the node. Neither changes collapsed folders or the selection. |
+| Play vault history | Press the wand button in the map toolbar to watch folders and files appear in the order they were created, in 20-60 seconds depending on vault size. The view zooms out as the map grows and ends on the overview; zooming or panning yourself turns this off. Space pauses, a second click stops. The creation date comes from `created` or `date` in frontmatter, otherwise from the file's timestamps. |
 | Refresh the tree | After adding, deleting, moving or renaming files, press **Refresh map** in the map's **Settings**, use the refresh icon in the map's header, or run **Brain Map: Refresh map**. Links between existing nodes update when Obsidian resolves them. |
 
 ## Settings
@@ -94,6 +95,8 @@ The same command writes geometry to `Brain-Map-diagnostika.md` at the vault root
 - 3D requires WebGL. If it is unavailable, the map stays in 2D.
 
 ## Changelog
+
+**0.2.1** - Vault history: the wand button plays how folders and files appeared over time, in 2D and 3D, with automatic zoom that ends on the overview. Tags are now a metallic red. The checkboxes in the map's Settings show a single box in Obsidian.
 
 **0.2.0** - Tags on the map: from frontmatter and inline `#tags`, with **Tag links** and **All tags** in Settings, tags in search and in the selection panel, and **Excluded tags** in the plugin settings. Tags follow the shape of the map in 2D and 3D and are linked in crimson.
 

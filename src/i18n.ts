@@ -1,3 +1,4 @@
+import { vychoziTextyHistorie, type TextyHistorie } from './jadro/texty-mapy.ts';
 import { vychoziTextyMapy, type TextyMapy } from './jadro/texty-mapy.ts';
 
 const EN = {
@@ -44,3 +45,6 @@ export function t(klic: KlicTextu, parametry: Readonly<Record<string, string>> =
 export function nazvyPalet(): string[] { return KLICE_PALET.map(klic => t(klic)); }
 export const TEXTY_MAPY_EN: TextyMapy = vychoziTextyMapy();
 export function textyMapy(): TextyMapy { return TEXTY_MAPY_EN; }
+
+export const TEXTY_HISTORIE_EN = vychoziTextyHistorie();
+export function textyHistorie(): TextyHistorie { return TEXTY_HISTORIE_EN; }

@@ -177,3 +177,25 @@
 /* rozbalený seznam kreslí na PC systém: bez vlastní barvy položek dědí světlý text na světlém pozadí Windows (přejímka 0.1.10);
    na konci souboru, protože tests/b6-k3.test.ts hlídá, že původní CSS zůstalo beze změny */
 .mozek-koren .nastaveni select option { background-color: var(--mozek-pozadi); color: var(--mozek-text); }
+
+.mozek-koren .historie-stitek { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: var(--background-primary, #101522); color: var(--text-normal, #eee); pointer-events: none; z-index: 5; white-space: nowrap; }
+.mozek-koren .historie-stitek[hidden] { display: none; }
+
+/* Host může kreslit fajfku pseudoprvkem; nativní kresba by přidala druhou. Web ponechá UA vzhled výše. */
+.mozek-koren.obsidian input[type="checkbox"] {
+ appearance: none; -webkit-appearance: none;
+ width: var(--checkbox-size, 16px); height: var(--checkbox-size, 16px);
+ border: var(--checkbox-border-width, 1px) solid var(--checkbox-border-color, var(--background-modifier-border));
+ border-radius: var(--checkbox-radius, 4px);
+ background-color: var(--background-primary);
+ cursor: pointer;
+}
+.mozek-koren.obsidian input[type="checkbox"]:checked {
+ background-color: var(--checkbox-color); border-color: var(--checkbox-color);
+}
+.mozek-koren.obsidian input[type="checkbox"]:hover {
+ border-color: var(--checkbox-border-color-hover, var(--checkbox-color-hover));
+}
+.mozek-koren.obsidian input[type="checkbox"]:checked:hover {
+ background-color: var(--checkbox-color-hover); border-color: var(--checkbox-color-hover);
+}

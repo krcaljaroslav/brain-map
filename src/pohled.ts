@@ -3,7 +3,7 @@ import { platnyStavPohledu, vytvorMapu, type InstanceMapy, type StavPohledu, typ
 import type { DataMapy, Vazba } from './adapter.ts';
 import type { ZaznamGeometrie } from './diagnostika.ts';
 import { pripojProstorListu, type ProstorListu } from './prostor-listu.ts';
-import { t, textyMapy } from './i18n.ts';
+import { t, textyMapy, textyHistorie } from './i18n.ts';
 
 export const TYP_POHLEDU = 'brain-map';
 const KLIC_SBALENE = 'mozek.sbalene';
@@ -198,6 +198,13 @@ export class MozekPohled extends ItemView {
   private volbyMapy(): VolbyMapy {
     return {
       hodnoty: this.plugin.hodnotyMapy(),
+      vzhledObsidian: true,
+      upozorni: (zprava) => { new Notice(zprava, 5000); },
+      nactiVznik: () => {
+        const nova = this.plugin.postavData();
+        const podleCesty = new Map(nova.nodes.map((uzel, i) => [uzel[4], nova.vznik?.[i] ?? null]));
+        return nova.vznik && this.data?.nodes.map(uzel => podleCesty.get(uzel[4]) ?? null);
+      },
       obnov: () => { this.obnov(); },
       otevri: (cesta) => {
         void otevriPoznamku(this.app, cesta, this.leaf).catch((chyba: unknown) => new Notice(`${t('otevreniSelhalo')}: ${String(chyba)}`));
@@ -207,6 +214,7 @@ export class MozekPohled extends ItemView {
       jeTelefon: () => Platform.isPhone,
       registruj: (cil, typ, posluchac, dalsi) => { this.registerDomEvent(cil as HTMLElement, typ as keyof HTMLElementEventMap, posluchac, dalsi); },
       texty: textyMapy(),
+      textyHistorie: textyHistorie(),
     };
   }
 }

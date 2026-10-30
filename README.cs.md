@@ -51,6 +51,7 @@ Otevři **Settings → Community plugins → Browse**, vyhledej **Brain Map**, n
 | Procházení souborů a vazeb | Klikni nebo klepni na počet v panelu výběru, pak na položku. **Back** vrátí předchozí uzel, **Clear selection** tuto historii vymaže. Esc nebo klik mimo seznam ho zavře. |
 | Hledání (2D / 3D) | Do **Search notes** napiš alespoň dva znaky, vyber výsledek nebo stiskni Enter pro první shodu. |
 | Návrat na celek nebo detail | **Overview** ukáže celou mapu. Když je vidět celá mapa a uzel je vybraný, tlačítko se změní na **Detail** a přeletí zpět k uzlu. Ani jedno nemění sbalení složek ani výběr. |
+| Přehrání historie vaultu | Tlačítko s hůlkou v liště mapy přehraje, jak složky a soubory postupně vznikaly, za 20-60 sekund podle velikosti vaultu. Pohled se s rostoucí mapou oddaluje a skončí na celku; když sám přiblížíš nebo posuneš, automatika se vypne. Mezerník pozastaví, druhý klik zastaví. Datum vzniku se bere z `created` nebo `date` ve frontmatteru, jinak z časů souboru. |
 | Obnovení stromu | Po přidání, smazání, přesunu nebo přejmenování souborů stiskni **Refresh map** v panelu **Settings**, ikonu obnovení v záhlaví karty mapy nebo spusť **Brain Map: Refresh map**. Odkazy mezi existujícími uzly se aktualizují, když je Obsidian rozliší. |
 
 ## Nastavení
@@ -94,6 +95,8 @@ Stejný příkaz zapíše geometrii do `Brain-Map-diagnostika.md` v kořeni vaul
 - 3D potřebuje WebGL. Když není dostupné, mapa zůstane ve 2D.
 
 ## Changelog
+
+**0.2.1** - Historie vaultu: tlačítko s hůlkou přehraje, jak složky a soubory vznikaly, ve 2D i 3D, s automatickým přiblížením, které skončí na celku. Tagy jsou nově metalicky červené. Zatržítka v panelu Settings mapy mají v Obsidianu jen jeden rámeček.
 
 **0.2.0** - Tagy na mapě: z frontmatteru i z textu (`#tag`), volby **Tag links** a **All tags** v Settings, tagy v hledání a v panelu výběru a **Excluded tags** v nastavení pluginu. Tagy kopírují tvar mapy ve 2D i 3D a vazby k nim jsou karmínové.
 

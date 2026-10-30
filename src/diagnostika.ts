@@ -8,6 +8,7 @@ import { jeCestaMimoMapu, postavMapu, VYCHOZI_VYLOUCENE_SLOZKY, type RozliseneVa
 import { listyHostitele, PROMENNA_ODSAZENI, PROMENNA_PREKRYVU, prvkyMimoTok, TRIDA_LISTY_HOSTITELE, vyberListu, type DuvodNeviditelnosti } from './prostor-listu.ts';
 
 export interface Diagnostika {
+  vznik?: ReturnType<typeof import('./jadro/historie.ts').diagnostikaVzniku>;
   verzeObsidianu: string;
   platform: Record<string, boolean>;
   vault: string;

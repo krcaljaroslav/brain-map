@@ -20,7 +20,11 @@ export type ZdrojTagu = (soubor: SouborVaultu) => readonly string[] | null;
 
 export function klicTagu(tag: string): string { return tag.trim().replace(/^#/, '').toLowerCase(); }
 
+export interface VznikUzlu { cas: number; ctime: number; zdroj: 'frontmatter' | 'ctime' | 'mtime' }
+export type ZdrojVzniku = (soubor: SouborVaultu) => Readonly<Record<string, unknown>> | null;
+
 export interface DataMapy {
+  vznik?: (VznikUzlu | null)[];
   vault: string;
   fields: ['parent', 'name', 'type', 'weight', 'path'];
   nodes: Uzel[];
@@ -31,6 +35,7 @@ export interface DataMapy {
 
 /** Výřez Obsidian API, který adaptér potřebuje; umožňuje mock z disku i z pole cest. */
 export interface SouborVaultu {
+  stat?: { ctime: number; mtime: number };
   path: string;
 }
 
@@ -175,14 +180,16 @@ function sestavVazby(resolvedLinks: RozliseneVazby, indexSouboru: Map<string, nu
   return [...klice].sort((a, b) => a - b).map((klic) => [Math.floor(klic / pocetUzlu), klic % pocetUzlu]);
 }
 
-export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby, vylouceneSlozky: readonly string[] = VYCHOZI_VYLOUCENE_SLOZKY, ostatni = false, zdrojTagu?: ZdrojTagu, vylouceneTagy: readonly string[] = []): DataMapy {
+export function postavMapu(vault: VaultProAdapter, resolvedLinks: RozliseneVazby, vylouceneSlozky: readonly string[] = VYCHOZI_VYLOUCENE_SLOZKY, ostatni = false, zdrojTagu?: ZdrojTagu, vylouceneTagy: readonly string[] = [], zdrojVzniku?: ZdrojVzniku): DataMapy {
   const vyloucene = new Set(vylouceneSlozky);
   const koren = zaradSoubory(vault.getFiles().map((soubor) => soubor.path), vyloucene);
   const uzly: Uzel[] = [[null, vault.getName() || 'vault', TYP_SLOZKA, 0, '']];
   const indexSouboru = new Map<string, number>();
   projdiSlozku(koren, 0, '', uzly, indexSouboru, ostatni);
   const vazby = sestavVazby(resolvedLinks, indexSouboru, uzly.length);
+  const vznik = sestavVznik(vault.getFiles(), uzly, zdrojVzniku);
   return {
+    ...(vznik ? { vznik } : {}),
     vault: uzly[0][1],
     fields: ['parent', 'name', 'type', 'weight', 'path'],
     nodes: uzly,
@@ -218,4 +225,32 @@ function sestavTagy(soubory: SouborVaultu[], indexy: Map<string, number>, zdroj:
   return [...tagy].sort(([a], [b]) => porovnejJmena(a, b)).map(([key, tag]) => ({
     key, name: [...tag.zapisy].sort((a, b) => b[1] - a[1] || porovnejJmena(a[0], b[0]))[0][0], notes: [...tag.notes].sort((a, b) => a - b),
   }));
+}
+
+function datumFrontmatteru(hodnota: unknown, ted: number): number | null {
+  if (typeof hodnota !== 'string' && !(hodnota instanceof Date)) return null;
+  if (hodnota instanceof Date && !Number.isFinite(hodnota.getTime())) return null;
+  const zapis = hodnota instanceof Date ? hodnota.toISOString() : hodnota;
+  if (!/^\d{4}-\d{2}-\d{2}(?:$|T| )/.test(zapis)) return null;
+  const cas = Date.parse(zapis);
+  const den = zapis.slice(0, 10);
+  const kontrola = new Date(den + 'T00:00:00Z');
+  return Number.isFinite(cas) && cas <= ted && Number.isFinite(kontrola.getTime()) && kontrola.toISOString().slice(0, 10) === den ? cas : null;
+}
+export function sestavVznik(soubory: SouborVaultu[], uzly: Uzel[], zdroj?: ZdrojVzniku, ted = Date.now()): (VznikUzlu | null)[] | null {
+  const podleCesty = new Map(soubory.map(soubor => [soubor.path, soubor]));
+  const vznik: (VznikUzlu | null)[] = uzly.map(() => null);
+  for (let i = 0; i < uzly.length; i++) {
+    if (uzly[i][2] === TYP_SLOZKA) continue;
+    const soubor = podleCesty.get(uzly[i][4]), stat = soubor?.stat;
+    if (!stat || ![stat.ctime, stat.mtime].every(cas => Number.isFinite(cas) && cas >= 0)) return null;
+    const fm = uzly[i][2] === TYP_POZNAMKA && zdroj ? zdroj(soubor) : null;
+    const datum = datumFrontmatteru(fm?.created, ted) ?? datumFrontmatteru(fm?.date, ted);
+    vznik[i] = { cas: datum ?? Math.min(stat.ctime, stat.mtime), ctime: stat.ctime, zdroj: datum !== null ? 'frontmatter' : stat.mtime < stat.ctime ? 'mtime' : 'ctime' };
+  }
+  for (let i = uzly.length - 1; i > 0; i--) {
+    const rodic = uzly[i][0] as number, zaznam = vznik[i];
+    if (zaznam && (!vznik[rodic] || zaznam.cas < vznik[rodic].cas)) vznik[rodic] = { ...zaznam };
+  }
+  return vznik.some(zaznam => zaznam !== null) ? vznik : null;
 }

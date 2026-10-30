@@ -1,3 +1,4 @@
+import { diagnostikaVzniku } from './src/jadro/historie.ts';
 import { getAllTags, apiVersion, Notice, Platform, Plugin, TFile, normalizePath } from 'obsidian';
 import { postavMapu, type DataMapy } from './src/adapter.ts';
 import { sestavDiagnostiku, ZaznamGeometrie, type ExportGeometrie } from './src/diagnostika.ts';
@@ -72,7 +73,10 @@ export default class MozekMapaPlugin extends Plugin {
       const skutecnySoubor = this.app.vault.getAbstractFileByPath(soubor.path);
       const cache = skutecnySoubor instanceof TFile ? this.app.metadataCache.getFileCache(skutecnySoubor) : null;
       return cache ? getAllTags(cache) : null;
-    }, this.nastaveni.vylouceneTagy);
+    }, this.nastaveni.vylouceneTagy, (soubor) => {
+      const skutecnySoubor = this.app.vault.getAbstractFileByPath(soubor.path);
+      return skutecnySoubor instanceof TFile ? this.app.metadataCache.getFileCache(skutecnySoubor)?.frontmatter ?? null : null;
+    });
   }
 
   /**
@@ -186,6 +190,8 @@ export default class MozekMapaPlugin extends Plugin {
     const diagnostika = sestavDiagnostiku(this.app.vault, this.app.metadataCache.resolvedLinks, apiVersion, Platform, this.nastaveni.vylouceneSlozky);
     const geometrie = this.zaznamGeometrie.export();
     diagnostika.geometrie = geometrie;
+    const historie = this.postavData();
+    if (historie.vznik) diagnostika.vznik = diagnostikaVzniku(historie.vznik, historie.nodes.map(uzel => uzel[2]));
     // Plugin configuration files are outside the indexed vault files, so use the Adapter API.
     await this.app.vault.adapter.write(cesta, JSON.stringify(diagnostika));
     const poznamka = await this.zapisPoznamkuGeometrie(geometrie);

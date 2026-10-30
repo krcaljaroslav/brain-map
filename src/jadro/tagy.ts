@@ -1,8 +1,8 @@
 import type { TagMapy } from '../adapter.ts';
 
 export interface BodTagu { x: number; y: number; z: number; r: number }
-export function barvaTagu(paleta: number): string { return ['#d04874', '#d34a6b', '#cc4979'][paleta] ?? '#d04874'; }
-export function svetlaBarvaTagu(paleta: number): string { return ['#ff94b5', '#ff9cb2', '#f89fc1'][paleta] ?? '#ff94b5'; }
+export function barvaTagu(paleta: number): string { return ['#ca4551', '#ce4854', '#d14b57'][paleta] ?? '#ca4551'; }
+export function svetlaBarvaTagu(paleta: number): string { return ['#fc898f', '#fb878e', '#fa858c'][paleta] ?? '#fc898f'; }
 export function normalizujHledani(text: string): string { return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
 export function shodaTagu(name: string, dotaz: string): boolean { return normalizujHledani(name).includes(normalizujHledani(dotaz.trim())); }
 export function viditelnostTagu(tags: readonly TagMapy[], tagLinks: boolean, allTags: boolean, poznamka: number, tag: number): { uzly: number[]; cary: [number, number][] } {
@@ -149,8 +149,38 @@ export function rozlozTagy3d(tags: readonly TagMapy[], poz: ArrayLike<number>): 
  return rozlozTagy(tags, x, y, 1, 0, poz);
 }
 
-export interface TagNaPlatne { index: number; x: number; y: number; r: number; name: string; velky: boolean }
-export function kresliTagy(c: CanvasRenderingContext2D, body: TagNaPlatne[], cary: { a: number[]; b: number[] }[], barva: string, cas: number, zoom: number, rozpocet: number, svetlaBarva = barva): boolean {
+export interface TagNaPlatne { key?: string; index: number; x: number; y: number; r: number; name: string; velky: boolean }
+interface MetalickyLak { sprity: Map<string, HTMLCanvasElement>; vytvorPlatno(dokument: Document): HTMLCanvasElement }
+function metalickySprit(dokument: Document, polomer: number, klicTagu: string, metal: MetalickyLak, meritkoZarizeni: number): HTMLCanvasElement {
+ const cache = metal.sprity;
+ // Plátno má přesně kreslenou velikost v pixelech zařízení: větší sprite se jen zmenšoval při každém drawImage (B10 k3: 5× pomalejší All tags).
+ const velikost = Math.max(2, Math.ceil(polomer * 2 * meritkoZarizeni)), jiskri = polomer > 5;
+ let seminko = 2166136261;
+ for (let i = 0; i < klicTagu.length; i++) seminko = Math.imul(seminko ^ klicTagu.charCodeAt(i), 16777619) >>> 0;
+ // Klíčů je nejvýš 11 + 52 × 4 = 219 < 256 (strop cache): průměr 6-10 px bez jisker a 11-36 px s jiskrami, obojí × DPR ≤ 2.
+ // Při 64 vzorech cache ve 3D přiblížení s All tags přetékala (750 různých klíčů za snímek, 91 ms místo 6 ms).
+ const vzor = seminko % 4, klic = `${velikost}:${jiskri ? vzor : -1}`;
+ const ulozeny = cache.get(klic);
+ if (ulozeny) return ulozeny;
+ const platno = metal.vytvorPlatno(dokument); platno.width = platno.height = velikost;
+ const c = platno.getContext('2d')!, r = velikost / 2;
+ const lak = c.createRadialGradient(r * 0.65, r * 0.6, 0, r, r, r);
+ lak.addColorStop(0, '#fc898f'); lak.addColorStop(0.42, '#ab2938'); lak.addColorStop(1, '#981823');
+ c.fillStyle = lak; c.beginPath(); c.arc(r, r, r, 0, Math.PI * 2); c.fill();
+ if (jiskri) {
+  let stav = vzor + 1;
+  const dalsi = () => { stav = (Math.imul(stav, 1664525) + 1013904223) >>> 0; return stav / 4294967296; };
+  c.fillStyle = '#f16770';
+  for (let i = 0; i < 3 + vzor % 4; i++) {
+   const uhel = dalsi() * Math.PI * 2, odstup = Math.sqrt(dalsi()) * r * 0.72;
+   // poloměr jiskry v pixelech zařízení odpovídá původní jiskře 0,7-1,2 px kreslené z dvojnásobného plátna
+   c.beginPath(); c.arc(r + Math.cos(uhel) * odstup, r + Math.sin(uhel) * odstup, (0.35 + dalsi() * 0.25) * meritkoZarizeni, 0, Math.PI * 2); c.fill();
+  }
+ }
+ if (cache.size >= 256) cache.delete(cache.keys().next().value!);
+ cache.set(klic, platno); return platno;
+}
+export function kresliTagy(c: CanvasRenderingContext2D, body: TagNaPlatne[], cary: { a: number[]; b: number[] }[], barva: string, cas: number, zoom: number, rozpocet: number, svetlaBarva = barva, metal?: MetalickyLak): boolean {
  c.save(); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.85; c.strokeStyle = barva; c.fillStyle = barva;
  const husty = cary.length > 200;
  c.lineWidth = husty ? 0.45 : 1.3;
@@ -165,9 +195,15 @@ export function kresliTagy(c: CanvasRenderingContext2D, body: TagNaPlatne[], car
  c.font = '12px sans-serif'; c.textBaseline = 'middle';
  const obsazene: number[][] = [];
  let pocet = 0;
+ const dokument = c.canvas?.ownerDocument, lak = dokument && metal ? metal : undefined;
+ // měřítko kontextu = DPR plátna (setTransform(dpr, …)); mock kontexty v testech getTransform nemají
+ const meritkoZarizeni = lak && typeof c.getTransform === 'function' ? c.getTransform().a || 1 : 1;
  for (const bod of body) {
+  // Plná tečka pod lakem zůstává: hlídá ji brána B9 (fills.includes(barva), harness-b9/harness.js) a stojí ~0,6 µs,
+  // zatímco drawImage spritu stojí ~3 µs bez ohledu na jeho velikost (měření B10 k4, softwarové plátno Chromia).
   c.fillStyle = barva;
   c.beginPath(); c.arc(bod.x, bod.y, bod.r, 0, Math.PI * 2); c.fill();
+  if (lak) c.drawImage(metalickySprit(dokument, bod.r, bod.key ?? bod.name, lak, meritkoZarizeni), bod.x - bod.r, bod.y - bod.r, bod.r * 2, bod.r * 2);
   if ((!bod.velky && zoom < 2) || pocet >= rozpocet) continue;
   const x = bod.x + bod.r + 5, w = c.measureText(bod.name).width;
   if (obsazene.some(o => x < o[2] && x + w > o[0] && bod.y - 8 < o[3] && bod.y + 8 > o[1])) continue;
@@ -175,4 +211,9 @@ export function kresliTagy(c: CanvasRenderingContext2D, body: TagNaPlatne[], car
  }
  c.restore();
  return !husty && cary.length > 0;
+}
+
+export function vytvorKresleniTagu(vytvorPlatno: MetalickyLak['vytvorPlatno']) {
+ const metal: MetalickyLak = { sprity: new Map(), vytvorPlatno };
+ return (...args: Parameters<typeof kresliTagy>): boolean => { args[8] = metal; return kresliTagy(...args); };
 }

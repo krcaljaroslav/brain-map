@@ -1,4 +1,5 @@
-import { barvaTagu, svetlaBarvaTagu, kresliTagy, rozlozTagy3d, type BodTagu, type TagNaPlatne } from './tagy.ts';
+import { konstantyHistorie, uOkrajeHistorie, cilHistorie, type ObalHistorie } from './historie.ts';
+import { barvaTagu, svetlaBarvaTagu, vytvorKresleniTagu, rozlozTagy3d, type BodTagu, type TagNaPlatne } from './tagy.ts';
 import type { TagMapy } from '../adapter.ts';
 import { vytvorPrvek } from '../dom-prvky.ts';
 import { vychoziTextyMapy } from './texty-mapy.ts';
@@ -26,6 +27,9 @@ export function platnaKamera3d(stav: unknown): Kamera3d | null {
 
 // Adaptace webového rendereru: lokální DOM/čas, explicitní lifecycle, bez globální registrace.
 export interface Jadro3d {
+ kresliZari?(c: CanvasRenderingContext2D, x: number, y: number, polomer: number, rgb: number[], klic: string, tvrdy: boolean, alfa: number): void;
+ historie?: boolean; historieRucni?: boolean;
+ krokHistorie?(cas: number): boolean; uzelVHistorii?(i: number): boolean; alfaHistorie?(i: number): number; rucniHistorie?(): void;
     tagy?: TagMapy[]; vybranyTag?: number;
     viditelneTagy?(): { uzly: number[]; cary: [number, number][] };
 	platno3d: HTMLCanvasElement;
@@ -59,6 +63,7 @@ export function sestavGeometrii(jadro: Jadro3d, rozlozeni: Rozlozeni3d) { return
 // F k vybranému, Esc zruší výběr; ťuknutí na bod = výběr a přelet, po doletu a po 10 s klidu pomalé kroužení.
 // Výpočty a shadery z webu 4a8725eb; každé volání vytváří vlastní uzávěr, výběr a panel poskytuje mapa.ts.
 function modul3d() {
+const HISTORIE = konstantyHistorie();
 const KROUZENI = { uhlovaRychlost: 0.022, elevaceDeg: 8, periodaElevaceS: 90, dychani: 0.04, periodaDychaniS: 60, prodlevaMs: 10000, nabehMs: 2000 };
 // dosednutí po ťuknutí: kamera se zastaví tak daleko, aby v zorném poli byl vybraný bod, jeho rodič a děti - poloměr záběru je větší
 // z poloměru viditelného podstromu a 0,75× vzdálenosti k rodiči, sevřený mezi 2 % a 30 % poloměru mapy (dřív pevných 40-140 jednotek
@@ -396,6 +401,7 @@ function sestavProgram(gl: WebGLRenderingContext, vs: string, fs: string, atribu
 }
 
 function tovarna(j: Jadro3d) {
+const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'));
  const texty = j.texty ?? vychoziTextyMapy();
 	const okno = j.popisky3d.ownerDocument.defaultView!;
 	const posluchace: { cil: EventTarget; typ: string; fn: EventListener; volby?: AddEventListenerOptions }[] = [];
@@ -403,6 +409,8 @@ function tovarna(j: Jadro3d) {
 		posluchace.push({ cil, typ, fn: fn as EventListener, volby });
 		j.registruj(cil, typ, fn as EventListener, volby);
 	}
+	let historieFit = true, posledniAuto = -Infinity;
+ let autoLet: { od: number; cil: number; start: number; stred: number[]; odStred: number[] } | null = null;
 	let zniceno = false, idSnimku = 0, casovacStartu: number | null = null;
 	let { pocet, rodic, typ, vaha, jmeno, cesta, hloubka, potomci } = j;
 	const platnoGl = j.platno3d, platnoP = j.popisky3d, pctx = platnoP.getContext('2d')!;
@@ -575,7 +583,7 @@ function tovarna(j: Jadro3d) {
      const viditelnost = j.viditelneTagy?.() ?? { uzly: [], cary: [] };
      zasahyTagu = viditelnost.uzly.flatMap(index => {
       const bod = bodyTagu[index], p = promitniBod(bod.x, bod.y, bod.z);
-      return p ? [{ index: pocet + index, x: p[0], y: p[1], r: Math.max(3, Math.min(18, bod.r * meritkoCss / p[2])), name: j.tagy![index].name, velky: j.tagy![index].notes.length >= 10 || j.vybranyTag === index }] : [];
+      return p ? [{ index: pocet + index, x: p[0], y: p[1], r: Math.max(3, Math.min(18, bod.r * meritkoCss / p[2])), key: j.tagy![index].key, name: j.tagy![index].name, velky: j.tagy![index].notes.length >= 10 || j.vybranyTag === index }] : [];
      });
      const cary = viditelnost.cary.flatMap(([tag, note]) => {
       const bod = bodyTagu[tag], p = promitniBod(bod.x, bod.y, bod.z), k = viditelnaKotva(note);
@@ -600,7 +608,7 @@ function tovarna(j: Jadro3d) {
 		uzlyPopiskuVyberu = []; impulzy = [];
 		const zvPoz: number[] = [], zvBarva: number[] = [], zvSila: number[] = [];
 		const pridejCaru = (a: number, b: number, rgb: number[], sila: number) => { zvPoz.push(rozlozeni.poz[a * 3], rozlozeni.poz[a * 3 + 1], rozlozeni.poz[a * 3 + 2], rozlozeni.poz[b * 3], rozlozeni.poz[b * 3 + 1], rozlozeni.poz[b * 3 + 2]); zvBarva.push(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, rgb[0] / 255, rgb[1] / 255, rgb[2] / 255); zvSila.push(sila, sila); };
-		if (vybrany >= 0) {
+		if (vybrany >= 0 && (!j.historie || j.uzelVHistorii?.(vybrany))) {
 			const stred = kotva[vybrany];
 			zvyraz[stred] = 1;
 			uzlyPopiskuVyberu.push(stred);
@@ -610,7 +618,7 @@ function tovarna(j: Jadro3d) {
 				if (uzlyPopiskuVyberu.length === 1) uzlyPopiskuVyberu.push(a);
 			}
 			if (stred === vybrany) {
-				const deti = potomci[vybrany].filter((d: number) => !skryty[d]).sort((p: number, q: number) => vaha[q] - vaha[p]);
+				const deti = potomci[vybrany].filter((d: number) => !skryty[d] && (!j.historie || j.uzelVHistorii?.(d))).sort((p: number, q: number) => vaha[q] - vaha[p]);
 				const tlum = Math.min(1, 6 / Math.sqrt(deti.length || 1));
 				for (const d of deti) zvyraz[d] = Math.max(zvyraz[d], Math.max(0.5, tlum));
 				uzlyPopiskuVyberu.push(...deti);
@@ -618,13 +626,13 @@ function tovarna(j: Jadro3d) {
 			const paleta = j.paleta, vazby = j.vazbyUzlu(vybrany);
 			for (const s of [{ mapa: vazby.ven, hex: paleta.ven, odStredu: true }, { mapa: vazby.dovnitr, hex: paleta.dovnitr, odStredu: false }]) {
 				const skupiny = new Map<number, number>();
-				for (const [uzel, n] of s.mapa) { const k = kotva[uzel]; skupiny.set(k, (skupiny.get(k) || 0) + n); }
+				for (const [uzel, n] of s.mapa) { if (j.historie && !j.uzelVHistorii?.(uzel)) continue; const k = kotva[uzel]; skupiny.set(k, (skupiny.get(k) || 0) + n); }
 				const serazene = [...skupiny.entries()].sort((p, q) => q[1] - p[1]).slice(0, MAX_SKUPIN_VAZEB);
 				const maxN = serazene.length ? serazene[0][1] : 1, rgb = j.hexNaRgb(s.hex);
 				// stovky paprsků z jednoho bodu by se sečetly v bílou plochu: od ~100 skupin síla klesá s odmocninou počtu
 				const tlumPoctu = Math.min(1, 10 / Math.sqrt(serazene.length || 1));
 				serazene.forEach(([k, n], poradi) => {
-					if (k === stred) return;
+					if (k === stred || j.historie && !j.uzelVHistorii?.(k)) return;
 					const sila = Math.log2(n + 1) / Math.log2(maxN + 1);
 					zvyraz[k] = Math.max(zvyraz[k], 0.9);
 					pridejCaru(stred, k, rgb, (0.18 + 0.42 * sila) * tlumPoctu);
@@ -633,6 +641,10 @@ function tovarna(j: Jadro3d) {
 			}
 		}
 		for (let i = 0; i < pocet; i++) stav[i] = skryty[i] ? 0 : vybrany < 0 ? 1 : (zvyraz[i] || 0.12);
+		if (j.historie) for (let i = 0; i < pocet; i++) {
+   if (!j.uzelVHistorii?.(i)) { stav[i] = 0; skryty[i] = 1; }
+   else stav[i] *= j.alfaHistorie?.(i) ?? 1;
+  }
 		// stav na vrcholy pásů, tenkých čar a stopek podle uzlu potomka (skrytá nebo ztlumená větev zhasne i s kmenem)
 		const stavVrcholu = (uzly: Int32Array) => { const s = new Float32Array(uzly.length); for (let v = 0; v < uzly.length; v++) s[v] = stav[uzly[v]]; return s; };
 		nahraj('barva', barvy); nahraj('stav', stav); nahraj('druh', druh);
@@ -641,7 +653,7 @@ function tovarna(j: Jadro3d) {
 		if (pocetZvyraznenychVrcholu) { nahraj('zvPoz', new Float32Array(zvPoz)); nahraj('zvBarva', new Float32Array(zvBarva)); nahraj('zvSila', new Float32Array(zvSila)); nahraj('zvStav', new Float32Array(zvSila.length).fill(1)); }
 		// vybraný bod se zářivějším dvorcem
 		pocetBoduVyberu = 0;
-		if (vybrany >= 0) {
+		if (vybrany >= 0 && stav[kotva[vybrany]] > 0) {
 			const s = kotva[vybrany], rgb = barvaRgb[s];
 			nahraj('vybPoz', new Float32Array([rozlozeni.poz[s * 3], rozlozeni.poz[s * 3 + 1], rozlozeni.poz[s * 3 + 2], rozlozeni.poz[s * 3], rozlozeni.poz[s * 3 + 1], rozlozeni.poz[s * 3 + 2]]));
 			nahraj('vybBarva', new Float32Array([rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1, 1, 1]));
@@ -659,6 +671,7 @@ function tovarna(j: Jadro3d) {
 		if (!j.zavislostiZapnute) return;
 		const mapa = new Map<number, number>();
 		for (const [a, b] of j.vazby) {
+   if (j.historie && (!j.uzelVHistorii?.(a) || !j.uzelVHistorii?.(b))) continue;
 			const va = kotva[a], vb = kotva[b];
 			if (va === vb) continue;
 			const klic = va < vb ? va * pocet + vb : vb * pocet + va;
@@ -695,6 +708,71 @@ function tovarna(j: Jadro3d) {
 		cekajiciKamera = null; let_ = null!; kotvaKrouzeni = null!;
 		vstup(); pozadujSnimek();
 	}
+ function zacniHistorii() { historieFit = true; posledniAuto = -Infinity; autoLet = null; let_ = null!; spinave = true; pozadujSnimek(); }
+ function zrusAutoHistorie() { autoLet = null; spinave = true; }
+ function dokonceniHistorie() {
+  if (!rozlozeni) return;
+  const z = vychoziZaber(); kam = z.kam; cil = z.cil; nahoru = [0, 1, 0]; dZakladni = z.d;
+  let_ = null!; autoLet = null; kotvaKrouzeni = null!; posledniVstup = okno.performance.now(); naplanujKlid();
+ }
+ function obalHistorie(jenOdhalene: boolean): ObalHistorie {
+  spocitejMatice();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < pocet; i++) {
+   if (viditelnaKotva(i) !== i || jenOdhalene && !j.uzelVHistorii?.(i)) continue;
+   const p = promitniBod(...poziceUzlu(i) as [number, number, number]);
+   if (!p || p[2] <= 0) return { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity };
+   x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  return { x0, y0, x1, y1 };
+ }
+ function automatikaHistorie(cas: number, zajistit = true) {
+  if (!j.historie || j.historieRucni || !rozlozeni) return;
+  const obal = obalHistorie(true), mimo = obal.x0 < 0 || obal.y0 < 0 || obal.x1 > sirka || obal.y1 > vyska;
+  if (historieFit || mimo || !autoLet && cas - posledniAuto >= HISTORIE.intervalMs && uOkrajeHistorie(obalHistorie(true), sirka, vyska)) {
+   const smer = jednotkovy(sub(kam, cil)), z = zaberNaVsechnyBody(smer, nahoru, PODIL_ZABERU), predKam = kam, predCil = cil;
+   cil = z.cil; kam = add(cil, nasob(smer, z.d));
+   const cely = obalHistorie(false);
+   const mezZoomu = cilHistorie({ viditelny: { x0: 0, y0: 0, x1: 0, y1: 0 }, cely, sirka, vyska, celek: { x: sirka / 2, y: vyska / 2, k: 1 }, maximum: z.d / Math.max(2, rozlozeni.R * 0.01), rucni: !!j.historieRucni, konec: false, spustit: true });
+   const f = nasob(smer, -1), bok = jednotkovy(kriz(f, nahoru)), n = kriz(bok, f);
+   const ty = Math.tan(ZORNY_UHEL / 2), tx = ty * sirka / Math.max(1, vyska);
+   const body: { x: number; y: number; z: number }[] = [];
+   let minimum = Math.max(2, rozlozeni.R * 0.01, z.d / (mezZoomu?.k ?? 1));
+   for (let i = 0; i < pocet; i++) if (viditelnaKotva(i) === i && j.uzelVHistorii?.(i)) {
+    const rel = sub(poziceUzlu(i), z.cil), hloubka = skalar(rel, f);
+    body.push({ x: skalar(rel, bok), y: skalar(rel, n), z: hloubka }); minimum = Math.max(minimum, 1 - hloubka);
+   }
+   // Posun cíle je průnik přípustných středů perspektivních frust, sevřený rámem Celku.
+   const stredPri = (d: number) => {
+    let x0 = -tx * (z.d - d), x1 = -x0, y0 = -ty * (z.d - d), y1 = -y0;
+    for (const bod of body) {
+     const w = tx * (d + bod.z) * HISTORIE.podil, h = ty * (d + bod.z) * HISTORIE.podil;
+     x0 = Math.max(x0, bod.x - w); x1 = Math.min(x1, bod.x + w);
+     y0 = Math.max(y0, bod.y - h); y1 = Math.min(y1, bod.y + h);
+    }
+    return { vejde: x0 <= x1 && y0 <= y1, stred: add(z.cil, add(nasob(bok, (x0 + x1) / 2), nasob(n, (y0 + y1) / 2))) };
+   };
+   let dole = Math.min(minimum, z.d), nahore = z.d;
+   for (let krok = 0; krok < 24; krok++) {
+    const d = (dole + nahore) / 2;
+    if (stredPri(d).vejde) nahore = d; else dole = d;
+   }
+   const d = nahore, pokus = stredPri(d), stred = pokus.vejde ? pokus.stred : z.cil;
+   kam = predKam; cil = predCil;
+   if (historieFit || mimo) { cil = stred; kam = add(cil, nasob(smer, d)); autoLet = null; kotvaKrouzeni = null!; }
+   else if (d > vzdalenost() || delka(sub(stred, cil)) > 0.01) autoLet = { od: vzdalenost(), cil: d, start: cas, stred, odStred: cil.slice() };
+   historieFit = false; posledniAuto = cas;
+  }
+  if (autoLet) {
+   const t = hladceKubicky(Math.min(1, (cas - autoLet.start) / HISTORIE.letMs)), smer = jednotkovy(sub(kam, cil));
+   cil = add(autoLet.odStred, nasob(sub(autoLet.stred, autoLet.odStred), t)); kam = add(cil, nasob(smer, autoLet.od + (autoLet.cil - autoLet.od) * t)); kotvaKrouzeni = null!;
+   if (t >= 1) autoLet = null;
+  }
+  if (zajistit) {
+   const obal = obalHistorie(true);
+   if (obal.x0 < 0 || obal.y0 < 0 || obal.x1 > sirka || obal.y1 > vyska) { historieFit = true; automatikaHistorie(cas, false); }
+  }
+ }
 	function vzdalenost() { return delka(sub(kam, cil)); }
 	function omezVzdalenost(d: number) {
      let maxR = rozlozeni.R;
@@ -946,14 +1024,14 @@ function tovarna(j: Jadro3d) {
 	function spocitejAlfy() {
 		const PRAH = j.PRAH_ROZESTUPU, rozestup = j.rozestup;
 		alfaPopisku[0] = 1;
-		prechod[0] = ekrD[0] > 0 ? hladce((rozestup[0] * meritkoCss / ekrD[0] - PRAH * 0.55) / (PRAH * 0.9)) : 1;
+		prechod[0] = j.historie ? 1 : ekrD[0] > 0 ? hladce((rozestup[0] * meritkoCss / ekrD[0] - PRAH * 0.55) / (PRAH * 0.9)) : 1;
 		for (let i = 1; i < pocet; i++) {
 			const p = rodic[i];
 			alfaPopisku[i] = stav[i] <= 0 ? 0 : alfaPopisku[p] * prechod[p];
-			if (typ[i] === 0) prechod[i] = ekrD[i] > 0 ? hladce((rozestup[i] * meritkoCss / ekrD[i] - PRAH * 0.55) / (PRAH * 0.9)) : 1;
+			if (typ[i] === 0) prechod[i] = j.historie ? 1 : ekrD[i] > 0 ? hladce((rozestup[i] * meritkoCss / ekrD[i] - PRAH * 0.55) / (PRAH * 0.9)) : 1;
 		}
 		const uzly = geometrie.opar.uzel;
-		for (let v = 0; v < uzly.length; v++) { const i = uzly[v]; oparAlfa[v] = stav[i] * alfaPopisku[i] * (druh[i] === 2 ? 0.35 : 1 - prechod[i]); }
+		for (let v = 0; v < uzly.length; v++) { const i = uzly[v]; oparAlfa[v] = (j.historie ? 0 : stav[i]) * alfaPopisku[i] * (druh[i] === 2 ? 0.35 : 1 - prechod[i]); }
 	}
 	function kresliPopisky() {
 		const c = pctx;
@@ -1184,10 +1262,11 @@ function tovarna(j: Jadro3d) {
 		if (zniceno || !aktivni || j.jePozastaveno()) return;
 		const zacatek = okno.performance.now();
 		const dt = posledniCas ? Math.min(0.1, (cas - posledniCas) / 1000) : 0.016;
-		let dalsi = false;
+		let dalsi = j.krokHistorie?.(cas) ?? false;
 		if (let_) { krokPreletu(cas); dalsi = true; }
 		else if (krokLetuKlavesami(dt)) dalsi = true;
 		else if (krokKrouzeni(cas, dt)) dalsi = true;
+		if (j.historie) { automatikaHistorie(cas); spinave = true; }
 		sledujLod(cas);
 		posledniCas = cas; vstupOd = Infinity;
 		if (ztracen || !gl) { konecSnimku = okno.performance.now(); if (dalsi) pozadujSnimek(); return; }
@@ -1198,6 +1277,14 @@ function tovarna(j: Jadro3d) {
 		spocitejAlfy();
 		kresliGl(cas);
 		kresliPopisky();
+  if (j.historie) {
+   pctx.save(); pctx.globalCompositeOperation = 'lighter';
+   for (let i = 0; i < pocet; i++) if (stav[i] > 0) {
+    const nabeh = j.alfaHistorie?.(i) ?? 1;
+    if (nabeh < 1) { const p = promitni(i); if (p) j.kresliZari?.(pctx, p.x, p.y, Math.max(6, ekrR[i] * 4), j.barvaRgb[i], j.cesta[i], true, Math.sin(nabeh * Math.PI)); }
+   }
+   pctx.restore();
+  }
         if (kresliVrstvaTagu(cas)) dalsi = true;
 		j.zmerSnimek?.(zacatek);
 		if (impulzy.length) dalsi = true;
@@ -1237,6 +1324,7 @@ function tovarna(j: Jadro3d) {
 			if (!gesto) return;
 			zaznamenejVstup(e);
 			if (gesto.typ === 'dvaPrsty') {
+                if (gesto.pohyb) j.rucniHistorie?.();
 				if (ukazatele.size !== 2) return;
 				const [a, b] = [...ukazatele.values()];
 				const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -1247,6 +1335,7 @@ function tovarna(j: Jadro3d) {
 				if (ukazatele.size !== 1) return;
 				const dx = e.clientX - gesto.x, dy = e.clientY - gesto.y;
 				if (Math.hypot(e.clientX - gesto.startX, e.clientY - gesto.startY) > PRAH_TAPU) gesto.pohyb = true;
+                if (gesto.pohyb) j.rucniHistorie?.();
 				if (gesto.typ === 'rotace') otoc(dx, dy); else posun(dx, dy, e.pointerType === 'mouse' ? RYCHLOST_POSUNU.mys : RYCHLOST_POSUNU.dotyk);
 				gesto.x = e.clientX; gesto.y = e.clientY;
 			}
@@ -1279,6 +1368,7 @@ function tovarna(j: Jadro3d) {
 			// exponenciála: pro malé kroky jako dřívější 1 + x, ale kladná i pro velké záporné deltaY (rychlé točení kolečkem)
 			// exponent sevřený, ať Math.exp nepodteče na 0 ani nepřeteče ; meze vzdálenosti hlídá zoom()
 			const faktor = Math.exp(sevri(e.deltaY * (e.deltaMode === 2 ? 0.025 : e.deltaMode === 1 ? 0.01 : 0.00025) * RYCHLOST_ZOOMU, -20, 20));
+			j.rucniHistorie?.();
 			zoom(faktor);
 			zaznamenejVstup(e);
 			vstup();
@@ -1290,9 +1380,9 @@ function tovarna(j: Jadro3d) {
 			if (e.ctrlKey || e.metaKey || e.altKey || !['w', 'a', 's', 'd', 'q', 'e', 'f', 'r', 'escape'].includes(k)) return;
 			e.stopPropagation();
 			shift = e.shiftKey;
-			if ('wasdqe'.includes(k) && k.length === 1) { stisknute.add(k); vstup(); pozadujSnimek(); e.preventDefault(); }
-			else if (k === 'f') { if ((j.vybranyTag ?? -1) >= 0) letNa(pocet + j.vybranyTag!); else if (j.vybrany >= 0) letNa(j.vybrany); e.preventDefault(); }
-			else if (k === 'r') { vstup(); celek(); e.preventDefault(); }
+			if ('wasdqe'.includes(k) && k.length === 1) { j.rucniHistorie?.(); stisknute.add(k); vstup(); pozadujSnimek(); e.preventDefault(); }
+			else if (k === 'f') { if ((j.vybranyTag ?? -1) >= 0 || j.vybrany >= 0) j.rucniHistorie?.(); if ((j.vybranyTag ?? -1) >= 0) letNa(pocet + j.vybranyTag!); else if (j.vybrany >= 0) letNa(j.vybrany); e.preventDefault(); }
+			else if (k === 'r') { j.rucniHistorie?.(); vstup(); celek(); e.preventDefault(); }
 			else if (k === 'escape') { j.vyber(-1); e.preventDefault(); }
 		});
 		naslouchej(platnoP, 'keyup', (e) => { const k = e.key.toLowerCase(); if (stisknute.has(k)) e.stopPropagation(); shift = e.shiftKey; stisknute.delete(k); j.aktualizujCelek?.(); });
@@ -1302,7 +1392,7 @@ function tovarna(j: Jadro3d) {
 	function tapni(x: number, y: number) {
 		const r = platnoP.getBoundingClientRect(), i = zasah(x - r.left, y - r.top);
 		// výběr až po startu přeletu: popisek Celek/Detail se během přeletu nemění, aktualizuje ho jeho konec 
-		if (i >= 0) { preletKUzlu(i); j.vyber(i); } else j.vyber(-1);
+		if (i >= 0) { j.rucniHistorie?.(); preletKUzlu(i); j.vyber(i); } else j.vyber(-1);
 		pozadujSnimek();
 	}
 
@@ -1363,7 +1453,7 @@ function tovarna(j: Jadro3d) {
 		if (j.jePozastaveno()) { pozastav(); return; }
 		if (!rozlozeni) { if (casovacStartu === null) zapni(); return; }
 		const [w, h] = j.rozmery();
-		if (w !== sirka || h !== vyska) { zrusGesto(); stisknute.clear(); shift = false; }
+		if (w !== sirka || h !== vyska) { if (j.historie) historieFit = true; zrusGesto(); stisknute.clear(); shift = false; }
 		zmenVelikost(); j.aktualizujCelek?.(); posledniCas = 0; naplanujKlid(); pozadujSnimek();
 	}
 	function destroy() {
@@ -1396,6 +1486,7 @@ function tovarna(j: Jadro3d) {
 	return {
 		get podporovano() { return podporovano; }, get duvodNepodpory() { return duvodNepodpory; }, get aktivni() { return aktivni; },
 		jeCelek: () => !!rozlozeni && vzdalenost() >= dZakladni * 0.99, detailZmeniZaber,
+		zacniHistorii, zrusAutoHistorie, dokonceniHistorie,
 		stavKamery, obnovKameru, zapni, vypni, destroy, pozastav, obnovVelikost, zneplatni, zmenData, letNa, celek, pozadujSnimek, zmenVelikost, nastavKrouzeni, get krouzeni() { return krouzeniZapnute; },
 		// Diagnostika patří instanci, bez vazby na hash celého okna.
 		ladeni: {

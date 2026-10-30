@@ -1,12 +1,12 @@
-import { vytvorPrvek } from '../dom-prvky.ts';
+import { vytvorPrvek, vytvorSvg } from '../dom-prvky.ts';
 // DOM mapy Mozek (B1b): totéž, co index.html webu, ale vytvořené uvnitř kontejneru bez globálních id. Jediné id je lokální
 // a unikátní pro aria-controls; místo modulového čítače instancí (mozek-dom.js) ho tvoří náhodná přípona, takže modul nemá
 // žádný stav. Prvky se vracejí v mapě pod stejnými klíči, jaké web čte přes getElementById.
-import type { TextyMapy } from './texty-mapy.ts';
+import type { TextyMapy, TextyHistorie } from './texty-mapy.ts';
 
 export type PrvkyMapy = Map<string, HTMLElement>;
 
-export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMapy, muzeObnovit = false): { koren: HTMLElement; prvky: PrvkyMapy } {
+export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMapy, muzeObnovit = false, historie?: TextyHistorie): { koren: HTMLElement; prvky: PrvkyMapy } {
 	const prvky: PrvkyMapy = new Map();
 	const el = (znacka: keyof HTMLElementTagNameMap, atributy: Record<string, unknown> = {}, deti: (HTMLElement | string)[] = []): HTMLElement => {
 		const prvek = vytvorPrvek(dokument, znacka);
@@ -35,6 +35,7 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 			]),
 			tlacitko('celek', t.celek, { title: t.celekTitulek }),
 			tlacitko('nastaveni-tlacitko', t.nastaveni, { 'aria-expanded': 'false', 'aria-controls': idNastaveni }),
+			...(historie ? [tlacitko('historie', '', { title: historie.historie, 'aria-label': historie.historie, 'aria-pressed': 'false', hidden: true })] : []),
 		]),
 		el('aside', { klic: 'nastaveni', class: 'nastaveni', id: idNastaveni, hidden: true }, [
 			// Dostupnost 3D podle WebGL řídí jádro; přepínač musí zůstat viditelný i s vysvětlením nedostupnosti.
@@ -53,6 +54,7 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 			el('p', { class: 'napoveda jen-3d', text: t.napoveda3d }),
 			el('span', { klic: 'meridlo', class: 'meridlo', title: t.meridloTitulek }),
 		]),
+		...(historie ? [el('output', { klic: 'historie-stitek', class: 'historie-stitek', hidden: true })] : []),
 		el('p', { klic: 'stav', class: 'stav', role: 'status', text: t.nacitam }),
 		el('section', { klic: 'panel', class: 'panel', hidden: true, 'aria-live': 'polite' }, [
 			el('div', { class: 'panel-hlava' }, [el('h2', { klic: 'panel-nazev' }), tlacitko('panel-zavrit', '×', { class: 'tlacitko tlacitko-ikona', 'aria-label': t.zrusitVyber })]),
@@ -62,6 +64,13 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 			el('div', { class: 'panel-akce' }, [tlacitko('panel-sbalit', t.sbalit), tlacitko('panel-obsidian', t.otevritPoznamku), tlacitko('panel-zrusit', t.zrusitVyber), tlacitko('panel-zpet', t.zpet, { hidden: true })]),
 		]),
 	]);
+	if (historie && typeof dokument.createElementNS === 'function') {
+	const svg = vytvorSvg(dokument, 'svg');
+	for (const [klic, hodnota] of Object.entries({ viewBox: '0 0 24 24', width: '20', height: '20', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'aria-hidden': 'true' })) svg.setAttribute(klic, hodnota);
+	const tah = vytvorSvg(dokument, 'path');
+	tah.setAttribute('d', 'm4 20 13-13 3 3L7 23ZM14 10l3 3M5 2v6M2 5h6M19 1v4M17 3h4');
+	svg.append(tah); prvky.get('historie')!.replaceChildren(svg);
+	}
 	kontejner.append(koren);
 	return { koren, prvky };
 }

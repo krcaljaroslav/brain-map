@@ -1,4 +1,5 @@
-import { barvaTagu, svetlaBarvaTagu, kresliTagy, rozlozTagy2d, viditelnostTagu, shodaTagu, type BodTagu, type TagNaPlatne } from './tagy.ts';
+import { konstantyHistorie, pripravHistorii, odhaleno, alfaVzniku, cilHistorie, uOkrajeHistorie, diagnostikaVzniku, type CasovaOsa, type ObalHistorie } from './historie.ts';
+import { barvaTagu, svetlaBarvaTagu, vytvorKresleniTagu, rozlozTagy2d, viditelnostTagu, shodaTagu, type BodTagu, type TagNaPlatne } from './tagy.ts';
 import type { TagMapy } from '../adapter.ts';
 import { vytvorPrvek } from '../dom-prvky.ts';
 // Jádro mapy Mozek jako instance (WBS B1b): vytvorMapu(kontejner, data, volby) → { destroy, nastavData, nastavVolby, … }.
@@ -14,7 +15,7 @@ import { setCssStyles } from '../css-styly.ts';
 import type { DataMapy, Vazba, Uzel } from '../adapter.ts';
 import { vytvorPohled3d, platnaKamera3d, type Kamera3d } from './mozek3d.ts';
 import { postavDom } from './mapa-dom.ts';
-import { vychoziTextyMapy, type TextyMapy } from './texty-mapy.ts';
+import { vychoziTextyMapy, vychoziTextyHistorie, type TextyHistorie, type TextyMapy } from './texty-mapy.ts';
 
 /** Registrace posluchače DOM; plugin předá registerDomEvent, bez ní jádro volá addEventListener. destroy() posluchače odebere vždy. */
 export type RegistracePosluchace = (cil: EventTarget, typ: string, posluchac: EventListener, volby?: AddEventListenerOptions) => void;
@@ -25,6 +26,9 @@ export type RegistracePosluchace = (cil: EventTarget, typ: string, posluchac: Ev
  * mozek.ostatni ('1'/'0'). Změnu volby z UI jádro hlásí přes uloz(klic, hodnota); nastavVolby bere tytéž klíče zvenku (B2).
  */
 export interface VolbyMapy {
+	upozorni?(zprava: string): void;
+	nactiVznik?(): DataMapy['vznik'];
+	vzhledObsidian?: boolean;
 	hodnoty?: Readonly<Record<string, string>>;
 	/** Obnova dat hostitele; bez ní panel Nastavení tlačítko Obnovit nenabízí. */
 	obnov?: () => void;
@@ -36,6 +40,7 @@ export interface VolbyMapy {
 	registruj?: RegistracePosluchace;
 	/** Texty v mapě (B2i); chybějící klíč má výchozí anglický text (vychoziTextyMapy). */
 	texty?: Partial<TextyMapy>;
+	textyHistorie?: Partial<TextyHistorie>;
 	/** Uložený pohled k obnovení místo úvodního (tvar StavPohledu, neověřený); neplatný nebo s výběrem mimo data = úvodní pohled. */
 	stavPohledu?: unknown;
 }
@@ -132,10 +137,19 @@ const PALETY = [
 // sprity bodů podle úrovně rozostření 0 (blízko, ostré jádro) až 3 (daleko, měkké): zastávky gradientu a síla jádra
 const JADRO_SPRITU = [[0.2, 0.36, 0.64, 1], [0.12, 0.3, 0.6, 0.85], [0.06, 0.26, 0.62, 0.65], [0.02, 0.2, 0.66, 0.5]];
 
+let historie: { osa: CasovaOsa; cas: number; posledni: number; pauza: boolean; rucni: boolean; stav: StavPohledu | null } | null = null;
+let varovaniHistorie = false, rychlostHistorie = 1, historieFit = true, posledniAuto = -Infinity;
+let autoLet: { od: Pohled; cil: Pohled; start: number } | null = null;
+let historiePripravaMs = 0, posledniSnimekHistorieMs = 0, posledniOdhaleno = -1, snimku = 0;
+
 const dokument = kontejner.ownerDocument, okno = dokument.defaultView as Window & typeof window;
+const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'));
+const HISTORIE = konstantyHistorie();
 const casVzniku = performance.now();
 const texty: TextyMapy = { ...vychoziTextyMapy(), ...volby.texty };
-const { koren, prvky } = postavDom(dokument, kontejner, texty, !!volby.obnov);
+const textyAnimace: TextyHistorie = { ...vychoziTextyHistorie(), ...volby.textyHistorie };
+const { koren, prvky } = postavDom(dokument, kontejner, texty, !!volby.obnov, textyAnimace);
+if (volby.vzhledObsidian) koren.classList.add('obsidian');
 type Prvky = { 'pohled-3d': HTMLButtonElement; platno: HTMLCanvasElement; platno3d: HTMLCanvasElement; popisky3d: HTMLCanvasElement; hledat: HTMLInputElement; paleta: HTMLSelectElement; hloubka: HTMLInputElement; krouzeni: HTMLInputElement; ostatni: HTMLInputElement; tagLinks: HTMLInputElement; allTags: HTMLInputElement; zavislosti: HTMLInputElement };
 const prvek = <K extends string>(id: K): K extends keyof Prvky ? Prvky[K] : HTMLElement => prvky.get(id) as K extends keyof Prvky ? Prvky[K] : HTMLElement;
 const platno = prvek('platno');
@@ -312,7 +326,7 @@ function pripravTagy(tags: TagMapy[]) {
  jmeno.length = pocet; cesta.length = pocet;
  for (const tag of tagy) { jmeno.push(tag.name); cesta.push('\0tag:' + tag.key); }
 }
-function viditelneTagy() { if (typeof tagy === 'undefined' || !tagy.length) return { uzly: [], cary: [] }; return viditelnostTagu(tagy, tagLinks, allTags, vybrany >= 0 && vybrany < pocet && typ[vybrany] === 1 ? vybrany : -1, vybrany >= pocet ? vybrany - pocet : -1); }
+function viditelneTagy() { if (historie) return { uzly: [], cary: [] }; if (typeof tagy === 'undefined' || !tagy.length) return { uzly: [], cary: [] }; return viditelnostTagu(tagy, tagLinks, allTags, vybrany >= 0 && vybrany < pocet && typ[vybrany] === 1 ? vybrany : -1, vybrany >= pocet ? vybrany - pocet : -1); }
 function prepocitejTagy() {
  if (typeof tagNaObrazovku === 'function') (tagNaObrazovku as ProjekceTagu).index = undefined;
  if (typeof tagy === 'undefined') return;
@@ -392,7 +406,7 @@ function kresliTagy2d(cas: number) {
  };
  zasahyTagu = viditelnost.uzly.map(index => {
   const bod = bodyTagu[index], xy = poloha(index);
-  return { index: pocet + index, x: xy[0], y: xy[1], r: Math.max(3, Math.min(18, bod.r * Math.sqrt(pohled.k))), name: tagy[index].name, velky: tagy[index].notes.length >= 10 || vybrany === pocet + index };
+  return { index: pocet + index, x: xy[0], y: xy[1], r: Math.max(3, Math.min(18, bod.r * Math.sqrt(pohled.k))), key: tagy[index].key, name: tagy[index].name, velky: tagy[index].notes.length >= 10 || vybrany === pocet + index };
  });
  const cary = viditelnost.cary.map(([tag, note]) => {
   const pred = kotvaSbaleni(note), s = meritkoZ(pred);
@@ -714,6 +728,7 @@ function prizpusobPohled() {
 }
 function omezK(k: number) { return Math.min(kFit * 6000, Math.max(kFit * 0.4, k)); }
 function priblizK(bodX: number, bodY: number, faktor: number) {
+ if (typeof rucniHistorie === 'function') rucniHistorie();
 	const k = omezK(pohled.k * faktor), skutecny = k / pohled.k;
 	pohled.x = bodX - (bodX - pohled.x) * skutecny;
 	pohled.y = bodY - (bodY - pohled.y) * skutecny;
@@ -728,6 +743,7 @@ function zmenVelikost() {
 	if (bezPlochy) { sirka = novaSirka; vyska = novaVyska; return; }
 	if (pozastaveno) return;   // list skrytý podle hostitele: rozměr se převezme až při zviditelnění (nastavViditelnost)
 	if (novyDpr === dpr && novaSirka === sirka && novaVyska === vyska) return;   // ResizeObserver hlásí i stejný rozměr; nastavení width by smazalo plátno
+	if (historie) historieFit = true;
 	dpr = novyDpr; sirka = novaSirka; vyska = novaVyska; plochaPohledu = [sirka, vyska];
 	if (!plochaPredKlavesnici) zapamatujOkno();   // plocha bez klávesnice: k ní se měří pokles okna 
 	for (const c of [platno, statika, vrstvaHierarchie]) { c.width = Math.round(sirka * dpr); c.height = Math.round(vyska * dpr); }
@@ -739,6 +755,7 @@ function prepocitejPauzu() {
 	const nova = bezPlochy || skrytoHostitelem;
 	if (nova === pozastaveno) return;
 	pozastaveno = nova;
+ if (historie) historie.posledni = performance.now();
 	if (pozastaveno) pozastav();
 }
 function zrusSnimek() {
@@ -755,6 +772,7 @@ function pozastav() {
 }
 function nastavViditelnost(viditelny: boolean) {
 	if (zniceno) return;
+	if (historie) historie.posledni = performance.now();
 	skrytoHostitelem = !viditelny;
 	prepocitejPauzu();
 	if (pozastaveno) return;
@@ -807,7 +825,7 @@ function polomerBodu(i: number, zoomPevny?: number) {
 	return Math.min(30, Math.max(3.2, (2.4 + Math.sqrt(vaha[i]) * 0.42) * zoom));
 }
 function projdiPodstrom(i: number, alfa: number) {
-	if (alfa < 0.01 || mimoObrazovku(i)) return;
+	if (typeof historie !== 'undefined' && historie && !uzelVHistorii(i) || alfa < 0.01 || mimoObrazovku(i)) return;
 	const s = meritkoZ(i), jas = jasZ(i), rozmazani = urovenRozmazani(i);
 	const [sx, sy] = naObrazovku(px[i], py[i], s);
 	const r = polomerBodu(i) * s;
@@ -822,6 +840,7 @@ function projdiPodstrom(i: number, alfa: number) {
 	if (t <= 0) return;
 	const listy = [];
 	for (const d of potomciKresleni[i]) {
+		if (typeof historie !== 'undefined' && historie && !uzelVHistorii(d)) continue;
 		if (typ[d] !== 0) { listy.push(d); continue; }
 		if (!mimoObrazovku(d)) kresliVetev(c, i, d, alfa * t);
 		projdiPodstrom(d, alfa * t);
@@ -972,6 +991,7 @@ function viditelnyPredek(i: number) {
 function spocitejZavislosti() {
 	const mapa = new Map<number, number>();
 	for (const [a, b] of vazby) {
+  if (historie && (!uzelVHistorii(a) || !uzelVHistorii(b))) continue;
 		const va = viditelnyPredek(a), vb = viditelnyPredek(b);
 		if (va === vb) continue;
 		const klic = va < vb ? va * pocet + vb : vb * pocet + va;
@@ -1160,7 +1180,7 @@ function vazbyUzlu(i: number) {
 }
 function seskupPodleKotvy(mapa: Map<number, number>) {
 	const skupiny = new Map<number, number>();
-	for (const [uzel, n] of mapa) { const k = viditelnyPredek(uzel); skupiny.set(k, (skupiny.get(k) || 0) + n); }
+	for (const [uzel, n] of mapa) { if (typeof uzelVHistorii === 'function' && !uzelVHistorii(uzel)) continue; const k = viditelnyPredek(uzel); skupiny.set(k, (skupiny.get(k) || 0) + n); }
 	return [...skupiny.entries()].sort((p, q) => q[1] - p[1]);
 }
 const historiePanelu: string[] = [];
@@ -1253,6 +1273,7 @@ function otevriVObsidianu(i: number) { if (i < pocet && volby.otevri) volby.otev
 
 // --- dynamická vrstva: ztlumení, zvýrazněné vazby, impulzy ---
 function poziceUzlu(i: number) {
+ if (typeof uzelVHistorii === 'function' && !uzelVHistorii(i)) return null;
  if (i >= pocet) { const bod = bodyTagu[i - pocet]; if (!bod) return null; const xy = tagNaObrazovku(bod.x, bod.y); return { id: i, x: xy[0], y: xy[1], r: bod.r, alfa: 1 }; }
 	const k = individualni && individualni[i] ? i : viditelnyPredek(i);
 	for (const v of viditelne) if (v.id === k) return v;
@@ -1264,7 +1285,7 @@ function bodKrivky(ax: number, ay: number, cx: number, cy: number, bx: number, b
 }
 function kresliVyber(cas: number) {
 	const bezVyberu = () => { zasahyPopiskuVyberu = new Map<number, Obdelnik>(); uzlyPopiskuVyberu = []; klicVrstvyVyberu = ''; return false; };
-	if (vybrany < 0 || vybrany >= pocet || !vyberVazby) return bezVyberu();
+	if (vybrany < 0 || vybrany >= pocet || !vyberVazby || typeof uzelVHistorii === 'function' && !uzelVHistorii(kotvaSbaleni(vybrany))) return bezVyberu();
 	// Oddálení ponechá výběru vlastní polohu; sbalená větev jej zastoupí nejvyšším sbaleným předkem.
 	const u = kotvaSbaleni(vybrany), s = meritkoZ(u), [x, y] = naObrazovku(px[u], py[u], s);
 	const stred: Viditelny = { id: u, x, y, r: polomerBodu(u) * s, alfa: 1 };
@@ -1391,6 +1412,134 @@ function kresliPopiskyVyberu(c: CanvasRenderingContext2D, uzly: Viditelny[]) {
 	}
 }
 
+function uzelVHistorii(i: number): boolean { return !historie || i < pocet && historie.osa.poradi[i] < odhaleno(historie.osa, historie.cas); }
+function alfaHistorie(i: number): number { return historie ? alfaVzniku(historie.osa, i, historie.cas, HISTORIE.nabehMs) : 1; }
+// Všechny uživatelské změny pohledu končí tady; přelety automatiky sem nevstupují.
+function rucniHistorie() { if (!historie) return; historie.rucni = true; autoLet = null; pohled3d?.zrusAutoHistorie(); }
+function prepniHistorii() {
+ if (historie) { ukonciHistorii(false); return; }
+ const cerstvyVznik = volby.nactiVznik ? volby.nactiVznik() : zdrojovaData.vznik;
+ if (!cerstvyVznik || !fitHotov) return;
+ const ulozeny = stavPohledu(), zacatek = performance.now();
+ const uzly: Uzel[] = Array.from({ length: pocet }, (_, i) => [rodic[i] < 0 ? null : rodic[i], jmeno[i], typ[i] as 0 | 1 | 2, vaha[i], cesta[i]]);
+ const vznik = new Array<NonNullable<DataMapy['vznik']>[number]>(pocet).fill(null);
+ cerstvyVznik.forEach((zaznam, i) => { if (indexyZdroje[i] >= 0) vznik[indexyZdroje[i]] = zaznam; });
+ const osa = pripravHistorii(uzly, vznik);
+ historiePripravaMs = performance.now() - zacatek;
+ if (!osa.soubory.length) return;
+ historie = { osa, cas: 0, posledni: performance.now(), pauza: false, rucni: false, stav: ulozeny };
+ if (!varovaniHistorie && diagnostikaVzniku(vznik, Array.from(typ)).podilNejcastejsihoDne > 0.5) { varovaniHistorie = true; volby.upozorni?.(textyAnimace.historieVarovani); }
+ let_ = null; autoLet = null; historieFit = true; posledniAuto = -Infinity; posledniOdhaleno = -1;
+ pohled3d?.zacniHistorii();
+ const tlacitko = prvek('historie'); tlacitko.title = textyAnimace.historieStop; tlacitko.setAttribute('aria-label', textyAnimace.historieStop); tlacitko.setAttribute('aria-pressed', 'true');
+ prvek('historie-stitek').hidden = false;
+ zneplatniStatiku();
+}
+function ukonciHistorii(dobehlo: boolean) {
+ if (!historie) return;
+ const automaticky = !historie.rucni;
+ historie = null; autoLet = null; let_ = null;
+ const tlacitko = prvek('historie'); tlacitko.title = textyAnimace.historie; tlacitko.setAttribute('aria-label', textyAnimace.historie); tlacitko.setAttribute('aria-pressed', 'false');
+ prvek('historie-stitek').hidden = true;
+ if (dobehlo && automaticky) {
+  if (pohled3dAktivni) pohled3d!.dokonceniHistorie(); else prizpusobPohled();
+ }
+ pohled3d?.zrusAutoHistorie();
+ zneplatniStatiku();
+}
+function krokHistorie(cas: number): boolean {
+ if (!historie) return false;
+ const h = historie;
+ if (!h.pauza) h.cas += Math.max(0, cas - h.posledni) * rychlostHistorie;
+ h.posledni = cas;
+ const n = odhaleno(h.osa, h.cas), soubor = h.osa.soubory[n - 1];
+ if (n !== posledniOdhaleno) { posledniOdhaleno = n; statikaSpinava = true; }
+ prvek('historie-stitek').textContent = textyAnimace.historieStitek(h.osa.vznik[soubor]!.cas, n);
+ if (h.cas >= h.osa.trvani) { ukonciHistorii(true); return false; }
+ return !h.pauza;
+}
+function bodyZaberuHistorie(jenOdhalene: boolean) {
+ const body: { x: number; y: number; s: number; r: number }[] = [];
+ const projdi = (i: number, alfa: number) => {
+  // Stejná viditelnost jako Celek (prizpusobPohled, VIDITELNE_OD 0,3): slabší bod Celek do okraje nepočítá a může ležet
+  // i za hranou plochy, takže záběr přehrávání ani měřidlo „uvnitř plochy" ho nesmí držet. Literál kvůli b10-k2.test.ts (vm).
+  if (alfa < 0.3 || jenOdhalene && !uzelVHistorii(i)) return;
+  const s = meritkoZ(i), [x, y] = naObrazovku(px[i], py[i], s);
+  body.push({ x, y, s, r: polomerBodu(i) * s });
+  if (typ[i] !== 0 || i !== 0 && sbalene.has(cesta[i])) return;
+  const t = hladce((rozestup[i] * pohled.k * s - PRAH_ROZESTUPU * 0.55) / (PRAH_ROZESTUPU * 0.9));
+  if (t < 1 && alfa * (1 - t) >= 0.3) {
+   const [x, y] = naObrazovku(podCx[i], podCy[i], s);
+   body.push({ x, y, s, r: Math.min(70, Math.max(5, podR[i] * pohled.k * s * 1.15 + 3)) * 0.45 });
+  }
+  for (const d of potomciKresleni[i]) projdi(d, alfa * t);
+ };
+ projdi(0, 1);
+ return body;
+}
+function obalHistorie(jenOdhalene: boolean): ObalHistorie {
+ let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+ for (const { x, y, r } of bodyZaberuHistorie(jenOdhalene)) {
+  x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r);
+ }
+ return { x0, y0, x1, y1 };
+}
+function zaberHistorie2d(celek: Pohled, maximum: number): Pohled {
+ const pred = pohled;
+ const priZoomu = (k: number) => {
+  const pomer = k / celek.k;
+  const zaklad = { k, x: sirka / 2 + (celek.x - sirka / 2) * pomer, y: vyska / 2 + (celek.y - vyska / 2) * pomer };
+  pohled = zaklad;
+  const body = bodyZaberuHistorie(true), okrajX = 0, okrajY = 0;
+  let x0 = -sirka * (pomer - 1) / 2, x1 = -x0, y0 = -vyska * (pomer - 1) / 2, y1 = -y0;
+  let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity, soucetS = 0;
+  for (const bod of body) {
+   bx0 = Math.min(bx0, bod.x - bod.r); bx1 = Math.max(bx1, bod.x + bod.r);
+   by0 = Math.min(by0, bod.y - bod.r); by1 = Math.max(by1, bod.y + bod.r); soucetS += bod.s;
+   x0 = Math.max(x0, (okrajX + bod.r - bod.x) / bod.s); x1 = Math.min(x1, (sirka - okrajX - bod.r - bod.x) / bod.s);
+   y0 = Math.max(y0, (okrajY + bod.r - bod.y) / bod.s); y1 = Math.min(y1, (vyska - okrajY - bod.r - bod.y) / bod.s);
+  }
+  const s = soucetS / Math.max(1, body.length);
+  const dx = Math.max(x0, Math.min(x1, (sirka / 2 - (bx0 + bx1) / 2) / s));
+  const dy = Math.max(y0, Math.min(y1, (vyska / 2 - (by0 + by1) / 2) / s));
+  return { vejde: x0 <= x1 && y0 <= y1, pohled: { k, x: zaklad.x + dx, y: zaklad.y + dy } };
+ };
+ let dole = celek.k, nahore = maximum, cil = { ...celek };
+ for (let krok = 0; krok < 24; krok++) {
+  const k = (dole + nahore) / 2, pokus = priZoomu(k);
+  if (pokus.vejde) { dole = k; cil = pokus.pohled; } else nahore = k;
+ }
+ pohled = pred;
+ return cil;
+}
+function automatikaHistorie(cas: number, zajistit = true) {
+ if (!historie || historie.rucni) return;
+ const obal = obalHistorie(true), mimo = obal.x0 < 0 || obal.y0 < 0 || obal.x1 > sirka || obal.y1 > vyska;
+ if (historieFit || mimo || !autoLet && cas - posledniAuto >= HISTORIE.intervalMs && uOkrajeHistorie(obalHistorie(true), sirka, vyska)) {
+  const pred = pohled, fitPred = kFit, obrazPred = fitObrazovka;
+  prizpusobPohled();
+  const celek = { ...pohled }, cely = obalHistorie(false), viditelny = obalHistorie(true);
+  const odhad = cilHistorie({ viditelny, cely, sirka, vyska, celek, maximum: kFit * 6000, rucni: historie.rucni, konec: false, spustit: true });
+  const cil = odhad && zaberHistorie2d(celek, odhad.k);
+  pohled = pred; kFit = fitPred; fitObrazovka = obrazPred;
+  if (cil) {
+   if (historieFit || mimo) { pohled = cil; autoLet = null; statikaSpinava = true; }
+   else if (cil.k < pohled.k || Math.abs(cil.x - pohled.x) > 0.1 || Math.abs(cil.y - pohled.y) > 0.1) autoLet = { od: { ...pohled }, cil, start: cas };
+  }
+  historieFit = false; posledniAuto = cas;
+ }
+ if (autoLet) {
+  const t = hladce(Math.min(1, (cas - autoLet.start) / HISTORIE.letMs)), { od, cil } = autoLet;
+  statikaSpinava = true;
+  pohled = { x: od.x + (cil.x - od.x) * t, y: od.y + (cil.y - od.y) * t, k: Math.exp(Math.log(od.k) + Math.log(cil.k / od.k) * t) };
+  if (t >= 1) autoLet = null;
+ }
+ if (zajistit) {
+  const obal = obalHistorie(true);
+  if (obal.x0 < 0 || obal.y0 < 0 || obal.x1 > sirka || obal.y1 > vyska) { historieFit = true; automatikaHistorie(cas, false); }
+ }
+}
+
 // --- animační smyčka (běží jen když se něco hýbe) ---
 // jediné místo, kde se žádá snímek: zničená nebo pozastavená instance (nulová plocha, skrytý list) nic neplánuje
 function naplanujSnimek() {
@@ -1436,21 +1585,28 @@ function snimek(cas: number) {
 	// smyčka rozběhnutá před přepnutím do 3D (impulzy výběru) by jinak dál kreslila schované plátno; návrat do 2D ji spustí znovu
 	if (pohled3dAktivni) { smyckaBezi = false; return; }
 	const zacatekSnimku = performance.now();
-	let dalsi = false;
-	if (let_) { dalsi = krokLetu(cas); }
+	let dalsi = krokHistorie(cas);
+	if (historie) automatikaHistorie(cas);
+	if (let_) { dalsi = krokLetu(cas) || dalsi; }
 	if (statikaSpinava) kresliStatiku();
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	ctx.globalCompositeOperation = 'source-over';
 	ctx.globalAlpha = 1;
 	ctx.clearRect(0, 0, sirka, vyska);
 	ctx.drawImage(statika, 0, 0, sirka, vyska);
+	if (historie) for (const v of viditelne) {
+  const nabeh = alfaHistorie(v.id);
+  if (nabeh < 1) kresliZari(ctx, v.x, v.y, v.r * 4, barvaRgb[v.id], barva[v.id], true, Math.sin(nabeh * Math.PI));
+ }
 	if (kresliVyber(cas)) dalsi = true;
 	if (kresliTagy2d(cas)) dalsi = true;
 	zmerSnimek(zacatekSnimku);
+ posledniSnimekHistorieMs = performance.now() - zacatekSnimku;
 	if (dalsi) naplanujSnimek(); else smyckaBezi = false;
 }
 // měřidlo pro měření na zařízení: ms od vzniku instance do prvního snímku, ms prvního snímku po výběru, paměť kde je
 function zmerSnimek(zacatekSnimku: number) {
+ snimku++;
 	const ted = performance.now();
 	let zmena = false;
 	if (meridlo.prvniSnimekMs === null) { meridlo.prvniSnimekMs = ted - casVzniku; zmena = true; }
@@ -1491,6 +1647,7 @@ function detailZmeniZaber(i: number) {
 // zachovejVetve = Detail (B5): nerozbalí předky a míří na viditelného zástupce vybraného uzlu ; výběr až po startu letu,
 // takže popisek Celek/Detail se během letu nemění
 function letNa(i: number, vyberHned = false, zachovejVetve = false) {
+ if (typeof rucniHistorie === 'function') rucniHistorie();
  if (i >= pocet) {
   const bod = bodyTagu[i - pocet]; if (!bod) return;
   vyber(i);
@@ -1557,6 +1714,7 @@ function pouzijStavPohledu(stav: StavPohledu) {
 	return true;
 }
 function stavPohledu(): StavPohledu | null {
+ if (typeof historie !== 'undefined' && historie) return historie.stav;
 	if (cekajiciPohled) return platnyStavPohledu(cekajiciPohled);
 	if (!fitHotov || !plochaPohledu[0] || !plochaPohledu[1]) return null;
 	return { x: pohled.x, y: pohled.y, k: pohled.k, sirka: plochaPohledu[0], vyska: plochaPohledu[1], natazeni, vybrany: vybrany >= 0 ? cesta[vybrany] : null, ...(pohled3dAktivni ? { rezim: '3d' as const, ...(pohled3d?.stavKamery() ? { kamera3d: pohled3d.stavKamery()! } : {}) } : {}) };
@@ -1824,6 +1982,7 @@ function napojOvladani() {
 		if (ukazatele.size === 2 && sevreni) {
 			const [a, b] = [...ukazatele.values()];
 			const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+			rucniHistorie();
 			const k = omezK(sevreni.k * Math.pow(d / Math.max(1, sevreni.d), CITLIVOST_SEVRENI)), pomer = k / sevreni.k;
 			pohled = { k, x: mx - (sevreni.sx - sevreni.px) * pomer, y: my - (sevreni.sy - sevreni.py) * pomer };
 			zneplatniStatiku();
@@ -1832,7 +1991,7 @@ function napojOvladani() {
 		if (ukazatele.size === 1 && start) {
 			const dx = x - start.x, dy = y - start.y;
 			if (!tazeni && Math.hypot(dx, dy) > 5) { tazeni = true; posledniTap.cas = 0; zrusDrzeni(); platno.classList.add('tahnu'); }
-			if (tazeni) { pohled.x = start.px + dx; pohled.y = start.py + dy; zneplatniStatiku(); }
+			if (tazeni) { if (typeof rucniHistorie === 'function') rucniHistorie(); pohled.x = start.px + dx; pohled.y = start.py + dy; zneplatniStatiku(); }
 		}
 	});
 	const konec = (e: PointerEvent) => {
@@ -2000,16 +2159,18 @@ function napojUI() {
 	const krouzeni = prvek('krouzeni');
 	krouzeni.checked = nacti(KLIC.krouzeni) !== '0';
 	naslouchej(krouzeni, 'change', () => { uloz(KLIC.krouzeni, krouzeni.checked ? '1' : '0'); if (pohled3d) pohled3d.nastavKrouzeni(krouzeni.checked); });
-	naslouchej(prvek('celek'), 'click', () => { zavriMenuPanelu(); if (vybrany >= 0 && prvek('celek').textContent === texty.detail) { letNa(vybrany, false, true); return; } if (pohled3dAktivni) pohled3d!.celek(); else celek2d(); });
+	naslouchej(prvek('celek'), 'click', () => { if (typeof rucniHistorie === 'function') rucniHistorie(); zavriMenuPanelu(); if (vybrany >= 0 && prvek('celek').textContent === texty.detail) { letNa(vybrany, false, true); return; } if (pohled3dAktivni) pohled3d!.celek(); else celek2d(); });
 }
 // Přepínač pohledu: 3D jen když je WebGL; bez něj (nebo po neobnovené ztrátě kontextu) zůstane tlačítko neaktivní s důvodem.
 // Návrat s výběrem používá stejný let jako klik ve 2D, až po převzetí rozměru plochy.
 function nastavPohled(rezim: string, ulozit = true, centruj = true) {
+ centruj &&= !(typeof historie !== 'undefined' && historie);
  zavriMenuPanelu();
 	const tri = rezim === '3d' && pohled3d && pohled3d.podporovano;
 	if (tri && !pohled3dAktivni) { zrusSnimek(); let_ = null; pohled3dAktivni = true; koren.classList.add('pohled-3d'); pohled3d!.zapni(); }
 	else if (!tri && pohled3dAktivni) { pohled3dAktivni = false; pohled3d!.vypni(); koren.classList.remove('pohled-3d'); prevezmiRozmer(); if (centruj && vybrany >= 0 && !pozastaveno) letNa(vybrany, true); statikaSpinava = true; pozadujSnimek(); }
 	// skutečný stav až po zapnutí: zapni() může synchronně selhat a přes vypadek3d přepnout zpět do 2D
+	if (typeof historie !== 'undefined' && historie) { historieFit = true; pohled3d?.zacniHistorii(); }
 	const ted = pohled3dAktivni;
 	prvek('pohled-2d').setAttribute('aria-pressed', String(!ted));
 	prvek('pohled-3d').setAttribute('aria-pressed', String(ted));
@@ -2026,6 +2187,8 @@ function vypadek3d() { nastavPohled('2d', false); oznacPodporu3d(); }
 function jadroPro3d() {
 	const stav = prvek('stav');
 	return {
+		get historie() { return !!historie; }, get historieRucni() { return historie?.rucni ?? false; },
+  krokHistorie, uzelVHistorii, alfaHistorie, rucniHistorie, kresliZari,
 		pocet, rodic, typ, vaha, jmeno, cesta, hloubka, potomci, konecPodstromu, vazby, odchozi, prichozi,
 		get barva() { return barva; }, get barvaRgb() { return barvaRgb; }, get paleta() { return PALETY[paletaIdx]; }, get paletaIdx() { return paletaIdx; },
 		get sbalene() { return sbalene; }, get zavislostiZapnute() { return zavislostiZapnute; }, get vybrany() { return vybrany < pocet ? vybrany : -1; },
@@ -2051,11 +2214,13 @@ function nastavOstatni(zapnout: boolean) {
 // přestavba nad zdrojovaData ve stejné instanci (Ostatní soubory, nastavData): strom, rozložení, barvy, orientace;
 // výběr se dohledá podle cesty, pohled (posun, měřítko) a volby zůstávají
 function prestavStruktury() {
+ ukonciHistorii(false);
  klicCelku = '';
 	const vybranaCesta = vybrany >= 0 ? cesta[vybrany] : null;
 	let_ = null;
 	zavriVysledky();
 	pripravStruktury(zdrojovaData);
+ if (typeof prvek === 'function') prvek('historie').hidden = !zdrojovaData.vznik || !typ.some(t => t !== 0);
 	rozloz(); obarvi(); srovnejOrientaci();
 	kotva = null; zavislostiCache = null; verzeViditelnosti = 0;
 	viditelne = []; individualni = null!;
@@ -2101,6 +2266,12 @@ function napojObsluhy() {
 	const napojenoPred = posluchace.length;
 	try {
 		napojOvladani();
+	naslouchej(prvek('historie'), 'click', () => prepniHistorii());
+	naslouchej(koren, 'keydown', (e) => {
+  if (!historie || e.code !== 'Space' || e.repeat || (e.target !== platno && e.target !== prvek('popisky3d'))) return;
+  e.preventDefault(); historie.pauza = !historie.pauza; historie.posledni = performance.now(); pozadujSnimek();
+ });
+
 		napojUI();
 		napojMenuPanelu();
 	} catch (chyba) {
@@ -2121,6 +2292,7 @@ function start(vstup: DataMapy) {
 	try {
 		zdrojovaData = overData(vstup);
 		pripravStruktury(zdrojovaData);
+		prvek('historie').hidden = !zdrojovaData.vznik || !typ.some(t => t !== 0);
 		const zacatekRozlozeni = performance.now();
 		rozloz();
 		const rozlozeniMs = performance.now() - zacatekRozlozeni;
@@ -2138,6 +2310,13 @@ function start(vstup: DataMapy) {
 		nastavPohled(rezimObnovy ?? (nacti(KLIC.pohled) === '3d' ? '3d' : '2d'), false);
 		rezimObnovy = null;
 		ladeni = {
+   get historie() { return historie ? { cas: historie.cas, trvani: historie.osa.trvani, rucni: historie.rucni, pauza: historie.pauza, odhaleno: odhaleno(historie.osa, historie.cas), viditelne: Array.from({ length: pocet }, (_, i) => i).filter(i => uzelVHistorii(i) && kotvaSbaleni(i) === i), pripravaMs: historiePripravaMs } : null; },
+   rychlostHistorie(nasobek: number) { rychlostHistorie = Math.max(0, nasobek); },
+   obalHistorie: () => obalHistorie(true), get historiePripravaMs() { return historiePripravaMs; },
+   get uzlyHistorie() { return Array.from({ length: pocet }, (_, i) => i).filter(i => uzelVHistorii(i)); },
+   get vykresleneUzly() { return viditelne.map(v => v.id); },
+   get uzlyZaberu() { return viditelne.flatMap(v => v.alfa >= 0.3 ? [v.id] : []); },
+   vyzadejSnimek: pozadujSnimek, get snimku() { return snimku; }, get posledniSnimekMs() { return posledniSnimekHistorieMs; },
 			get tagy() { return { data: tagy, body: bodyTagu, rozlozeniMs: tagyRozlozeniMs, viditelnost: viditelneTagy(), barva: barvaTagu(paletaIdx) }; },
 			get posledniVykresleniMs() { return posledniVykresleniMs; }, get pohled() { return { ...pohled }; }, prekresli() { kresliStatiku(); return posledniVykresleniMs; },
 			get pocetUzlu() { return pocet; }, get pocetVazeb() { return vazby.length; }, rozlozeniMs, get pocetViditelnych() { return viditelne.length; },
