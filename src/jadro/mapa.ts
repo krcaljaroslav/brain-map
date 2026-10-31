@@ -1,3 +1,4 @@
+import { vytvorCacheAgregace, vytvorCachePrahu, nactiHustotu, pripravPary2d, type HustotaVazeb } from './zavislosti.ts';
 import { konstantyHistorie, pripravHistorii, odhaleno, alfaVzniku, cilHistorie, uOkrajeHistorie, diagnostikaVzniku, type CasovaOsa, type ObalHistorie } from './historie.ts';
 import { barvaTagu, svetlaBarvaTagu, vytvorKresleniTagu, rozlozTagy2d, viditelnostTagu, shodaTagu, type BodTagu, type TagNaPlatne } from './tagy.ts';
 import type { TagMapy } from '../adapter.ts';
@@ -22,7 +23,7 @@ export type RegistracePosluchace = (cil: EventTarget, typ: string, posluchac: Ev
 
 /**
  * Volby a hostitel instance. `hodnoty` jsou volby při vzniku pod klíči webu: mozek.paleta ('0'-'2'), mozek.sbalene (JSON pole cest),
- * mozek.zavislosti ('1'/'0'), mozek.hloubka ('1'/'0', výchozí zapnuto), mozek.pohled ('2d'/'3d'), mozek.krouzeni ('1'/'0'),
+ * mozek.zavislosti ('0'/'25'/'50'/'75'/'100'), mozek.hloubka ('1'/'0', výchozí zapnuto), mozek.pohled ('2d'/'3d'), mozek.krouzeni ('1'/'0'),
  * mozek.ostatni ('1'/'0'). Změnu volby z UI jádro hlásí přes uloz(klic, hodnota); nastavVolby bere tytéž klíče zvenku (B2).
  */
 export interface VolbyMapy {
@@ -105,7 +106,6 @@ export function platnyStavPohledu(stav: unknown): StavPohledu | null {
 
 export function vytvorMapu(kontejner: HTMLElement, data: DataMapy, volby: VolbyMapy = {}): InstanceMapy {
 const PRAH_ROZESTUPU = 6;      // px na obrazovce: podstrom se rozkreslí po bodech, až když se potomci takhle rozestoupí
-const MAX_KRIVEK = 1500;       // nejsilnějších křivek závislostí najednou
 const MAX_DPR = 2;
 const MAX_POPISKU = 500;
 // mobilní gesta (B3): zoom dvěma prsty roste s poměrem vzdálenosti prstů umocněným na CITLIVOST_SEVRENI (web 1 = lineárně;
@@ -150,7 +150,7 @@ const texty: TextyMapy = { ...vychoziTextyMapy(), ...volby.texty };
 const textyAnimace: TextyHistorie = { ...vychoziTextyHistorie(), ...volby.textyHistorie };
 const { koren, prvky } = postavDom(dokument, kontejner, texty, !!volby.obnov, textyAnimace);
 if (volby.vzhledObsidian) koren.classList.add('obsidian');
-type Prvky = { 'pohled-3d': HTMLButtonElement; platno: HTMLCanvasElement; platno3d: HTMLCanvasElement; popisky3d: HTMLCanvasElement; hledat: HTMLInputElement; paleta: HTMLSelectElement; hloubka: HTMLInputElement; krouzeni: HTMLInputElement; ostatni: HTMLInputElement; tagLinks: HTMLInputElement; allTags: HTMLInputElement; zavislosti: HTMLInputElement };
+type Prvky = { 'pohled-3d': HTMLButtonElement; platno: HTMLCanvasElement; platno3d: HTMLCanvasElement; popisky3d: HTMLCanvasElement; hledat: HTMLInputElement; paleta: HTMLSelectElement; hloubka: HTMLInputElement; krouzeni: HTMLInputElement; ostatni: HTMLInputElement; tagLinks: HTMLInputElement; allTags: HTMLInputElement; zavislosti: HTMLSelectElement };
 const prvek = <K extends string>(id: K): K extends keyof Prvky ? Prvky[K] : HTMLElement => prvky.get(id) as K extends keyof Prvky ? Prvky[K] : HTMLElement;
 const platno = prvek('platno');
 const ctx = platno.getContext('2d') as CanvasRenderingContext2D;
@@ -185,13 +185,18 @@ let zdrojovaData: DataMapy, ostatniZapnute = false, indexyZdroje: Int32Array = n
 let pocet = 0, rodic: Int32Array, typ: Uint8Array, vaha: Float64Array, jmeno: string[], cesta: string[], hloubka: Int32Array, potomci: number[][], konecPodstromu: Int32Array, vetev: Int32Array;
 let px: Float64Array, py: Float64Array, zet: Float32Array, smer: Float64Array, tloustka: Float64Array, barva: string[], barvaRgb: number[][], podCx: Float64Array, podCy: Float64Array, podR: Float64Array, podZmin: Float32Array, podZmax: Float32Array, rozestup: Float64Array, hledaciJmeno: string[], potomciKresleni: number[][];
 let odchozi: number[][], prichozi: number[][], vazby: number[][] = [];
-let paletaIdx = 0, sbalene = new Set<string>(), zavislostiZapnute = false, hloubkaZapnuta = true;
+let paletaIdx = 0, sbalene = new Set<string>(), zavislostiZapnute = false, hustotaVazeb: HustotaVazeb = 0, hloubkaZapnuta = true;
 let otoceno = false, natazeni = 1;   // rozložení otočené o 90° a protažené na výšku pro portrétní displej
 let pxZakl: Float64Array, pyZakl: Float64Array, smerZakl: Float64Array;         // základní (neotočené) rozložení, z něhož se orientace odvozuje
 let fitObrazovka: number[] | null = null;       // obdélník na obrazovce, který úvodní pohled vyplnil (promítnuté body i se září)
 let pohled: Pohled = { x: 0, y: 0, k: 1 }, kFit = 1, dpr = 1, sirka = 0, vyska = 0;
 // obnova po Zpět (P6): stav čekající na první plochu; plocha, při které platí pohled (skrytý list hlásí nulový rozměr)
 let cekajiciPohled: StavPohledu | null = platnyStavPohledu(volby.stavPohledu), plochaPohledu = [0, 0];
+const agregaceVazeb = vytvorCacheAgregace(), intervalKotev = vytvorCachePrahu();
+let klicKotev = '', vazbyKotev: number[][] | null = null;
+let paryZavislosti2d: ReturnType<typeof pripravPary2d> | null = null;
+let podkladZavislosti2d: ReturnType<typeof spocitejZavislosti> | null = null, zaberZavislosti2d = '';
+let silyZavislosti2d = new Float64Array(0), ohybyZavislosti2d = new Float64Array(0);
 let viditelne: Viditelny[] = [], individualni: Uint8Array, kotva: Int32Array | null, verzeViditelnosti = 0, zavislostiCache: ReturnType<typeof spocitejZavislosti> | null = null;
 let vybrany = -1, vyberVazby: ReturnType<typeof vazbyUzlu> = null!, zasahyPopisku = new Map<number, Obdelnik>(), zasahyPopiskuVyberu = new Map<number, Obdelnik>();
 let statikaSpinava = true, smyckaBezi = false, let_: Let2d | null = null, posledniVykresleniMs = 0;
@@ -803,7 +808,7 @@ function kresliStatiku() {
 	projdiPodstrom(0, 1);
 	let podpis = 0;
 	for (let i = 0; i < pocet; i++) if (individualni[i]) podpis = (podpis * 31 + i) >>> 0;
-	if (podpis !== verzeViditelnosti) { verzeViditelnosti = podpis; zavislostiCache = null; kotva = null; }
+	if (podpis !== verzeViditelnosti) { verzeViditelnosti = podpis; kotva = null; }
 	if (zavislostiZapnute) kresliZavislosti(c);
 	if (ladeniPrepinace.popisky) kresliPopisky(c);
 	c.globalCompositeOperation = 'source-over';
@@ -988,17 +993,33 @@ function viditelnyPredek(i: number) {
 	}
 	return kotva[i];
 }
-function spocitejZavislosti() {
-	const mapa = new Map<number, number>();
-	for (const [a, b] of vazby) {
-  if (historie && (!uzelVHistorii(a) || !uzelVHistorii(b))) continue;
-		const va = viditelnyPredek(a), vb = viditelnyPredek(b);
-		if (va === vb) continue;
-		const klic = va < vb ? va * pocet + vb : vb * pocet + va;
-		mapa.set(klic, (mapa.get(klic) || 0) + 1);
-	}
-	const vse = [...mapa.entries()].sort((p, q) => q[1] - p[1]);
-	return { krivky: vse.slice(0, MAX_KRIVEK), celkem: vse.length, maxPocet: vse.length ? vse[0][1] : 1 };
+function spocitejZavislosti(): { krivky: [number, number][]; maxPocet: number } {
+ const stav = [hloubkaZapnuta, natazeni, otoceno, ...sbalene].join('|');
+ const interval = intervalKotev(stav, potomciKresleni, pohled.k, () => {
+  const vetve: number[][] = [];
+  function projdi(i: number, faktory: number[]) {
+   if (!potomciKresleni[i].length) return;
+   const dalsi = [...faktory, sbalene.has(cesta[i]) && i !== 0 ? 0 : rozestup[i] * meritkoZ(i) / PRAH_ROZESTUPU];
+   vetve.push(dalsi);
+   for (const d of potomciKresleni[i]) projdi(d, dalsi);
+  }
+  projdi(0, []); return vetve;
+ });
+ const klic = stav + '|' + interval + '|' + (historie ? odhaleno(historie.osa, historie.cas) : -1);
+ if (zavislostiCache && klicKotev === klic && vazbyKotev === vazby) return zavislostiCache;
+ klicKotev = klic; vazbyKotev = vazby;
+ // Sémantické kotvy jsou nezávislé na ořezu stromu pro kreslení. Posun nesmí přesměrovat vazbu na jiného předka.
+ const predci = new Int32Array(pocet), odhalene = new Uint8Array(pocet);
+ function projdi(i: number, alfa: number, predek: number) {
+  odhalene[i] = uzelVHistorii(i) ? 1 : 0;
+  const kotva = odhalene[i] && alfa > 0.5 ? i : predek;
+  predci[i] = kotva;
+  const t = sbalene.has(cesta[i]) && i !== 0 ? 0 : hladce((rozestup[i] * pohled.k * meritkoZ(i) - PRAH_ROZESTUPU * 0.55) / (PRAH_ROZESTUPU * 0.9));
+  for (const d of potomciKresleni[i]) projdi(d, alfa * t, kotva);
+ }
+ projdi(0, 1, 0);
+ const krivky = agregaceVazeb.nacti(vazby, predci, odhalene);
+ return zavislostiCache = { krivky, maxPocet: krivky.length ? krivky[0][1] : 1 };
 }
 function krivkaMezi(ax: number, ay: number, bx: number, by: number, sul: number | string) {
 	const mx = (ax + bx) / 2, my = (ay + by) / 2, dx = bx - ax, dy = by - ay;
@@ -1006,32 +1027,48 @@ function krivkaMezi(ax: number, ay: number, bx: number, by: number, sul: number 
 	return [mx - dy * vychylka, my + dx * vychylka];
 }
 function kresliZavislosti(c: CanvasRenderingContext2D) {
-	if (!zavislostiCache) zavislostiCache = spocitejZavislosti();
-	const { krivky, celkem, maxPocet } = zavislostiCache;
-	const pozice = new Map<number, Viditelny>();
-	for (const v of viditelne) pozice.set(v.id, v);
-	const rgb = hexNaRgb(PALETY[paletaIdx].vazba);
-	c.strokeStyle = PALETY[paletaIdx].vazba;
-	c.lineCap = 'round';
-	for (const [klic, n] of krivky) {
-		const a = Math.floor(klic / pocet), b = klic % pocet;
-		const pa = pozice.get(a), pb = pozice.get(b);
-		if (!pa || !pb) continue;
-		const sila = Math.log2(n + 1) / Math.log2(maxPocet + 1);
-		c.globalAlpha = 0.05 + 0.3 * sila;
-		c.lineWidth = 0.6 + 2.4 * sila;
-		const [cx, cy] = krivkaMezi(pa.x, pa.y, pb.x, pb.y, klic);
-		c.beginPath(); c.moveTo(pa.x, pa.y); c.quadraticCurveTo(cx, cy, pb.x, pb.y); c.stroke();
-		if (sila > 0.5) {
-			c.globalAlpha = 0.06 * sila;
-			c.lineWidth = (0.6 + 2.4 * sila) * 3;
-			c.beginPath(); c.moveTo(pa.x, pa.y); c.quadraticCurveTo(cx, cy, pb.x, pb.y); c.stroke();
-		}
-	}
-	void rgb;
-	prvek('zavislosti-info').textContent = celkem > krivky.length
-		? texty.krivkySkryte(krivky.length, celkem, celkem - krivky.length)
-		: texty.krivek(celkem);
+ zavislostiCache = spocitejZavislosti();
+ const { krivky, maxPocet } = zavislostiCache;
+ if (podkladZavislosti2d !== zavislostiCache) {
+  podkladZavislosti2d = zavislostiCache;
+  paryZavislosti2d = pripravPary2d(krivky, pocet);
+  silyZavislosti2d = new Float64Array(krivky.length); ohybyZavislosti2d = new Float64Array(krivky.length);
+  for (let i = 0; i < krivky.length; i++) {
+   silyZavislosti2d[i] = Math.log2(paryZavislosti2d.pocty[i] + 1) / Math.log2(maxPocet + 1);
+   const sul = String(krivky[i][0]);
+   ohybyZavislosti2d[i] = 0.18 * odchylka(sul, 'oblouk') + (odchylka(sul, 'strana') > 0 ? 0.12 : -0.12);
+  }
+  zaberZavislosti2d = '';
+ }
+ const pary = paryZavislosti2d!;
+ const zaber = [pohled.x, pohled.y, pohled.k, sirka, vyska, hustotaVazeb].join('|');
+ if (zaberZavislosti2d !== zaber) {
+  const cx = sirka / 2, cy = vyska / 2;
+  for (let i = 0; i < pary.konce.length; i++) {
+   const uzel = pary.konce[i], s = meritkoZ(uzel);
+   pary.x[i] = cx + (px[uzel] * pohled.k + pohled.x - cx) * s;
+   pary.y[i] = cy + (py[uzel] * pohled.k + pohled.y - cy) * s;
+  }
+  pary.vyber(hustotaVazeb, sirka, vyska);
+  zaberZavislosti2d = zaber;
+ }
+ c.strokeStyle = PALETY[paletaIdx].vazba;
+ c.lineCap = 'round';
+ for (let poradi = 0; poradi < pary.n; poradi++) {
+  const i = pary.vybrane[poradi], a = pary.a[i], b = pary.b[i];
+  const ax = pary.x[a], ay = pary.y[a], bx = pary.x[b], by = pary.y[b];
+  const sila = silyZavislosti2d[i], ohyb = ohybyZavislosti2d[i];
+  c.globalAlpha = 0.05 + 0.3 * sila;
+  c.lineWidth = 0.6 + 2.4 * sila;
+  const cx = (ax + bx) / 2 - (by - ay) * ohyb, cy = (ay + by) / 2 + (bx - ax) * ohyb;
+  c.beginPath(); c.moveTo(ax, ay); c.quadraticCurveTo(cx, cy, bx, by); c.stroke();
+  if (sila > 0.5) {
+   c.globalAlpha = 0.06 * sila;
+   c.lineWidth = (0.6 + 2.4 * sila) * 3;
+   c.beginPath(); c.moveTo(ax, ay); c.quadraticCurveTo(cx, cy, bx, by); c.stroke();
+  }
+ }
+ prvek('zavislosti-info').textContent = texty.vazbyPocet(pary.n, pary.celkem);
 }
 
 // --- popisky s kolizní mřížkou a rozpočtem ---
@@ -2123,8 +2160,8 @@ function napojUI() {
 	ostatni.checked = ostatniZapnute;
 	naslouchej(ostatni, 'change', () => nastavOstatni(ostatni.checked));
 	const zavislosti = prvek('zavislosti');
-	zavislosti.checked = zavislostiZapnute;
-	naslouchej(zavislosti, 'change', () => { zavislostiZapnute = zavislosti.checked; uloz(KLIC.zavislosti, zavislostiZapnute ? '1' : '0'); if (!zavislostiZapnute) prvek('zavislosti-info').textContent = ''; zneplatniStatiku(); });
+	zavislosti.value = String(hustotaVazeb);
+	naslouchej(zavislosti, 'change', () => { hustotaVazeb = nactiHustotu(zavislosti.value); zavislostiZapnute = hustotaVazeb > 0; uloz(KLIC.zavislosti, String(hustotaVazeb)); if (!zavislostiZapnute) prvek('zavislosti-info').textContent = ''; zneplatniStatiku(); });
 	const hloubka3d = prvek('hloubka');
 	hloubka3d.checked = hloubkaZapnuta;
 	naslouchej(hloubka3d, 'change', () => nastavHloubku(hloubka3d.checked));
@@ -2187,17 +2224,17 @@ function vypadek3d() { nastavPohled('2d', false); oznacPodporu3d(); }
 function jadroPro3d() {
 	const stav = prvek('stav');
 	return {
-		get historie() { return !!historie; }, get historieRucni() { return historie?.rucni ?? false; },
+		get historie() { return !!historie; }, get pocetOdhalenych() { return historie ? odhaleno(historie.osa, historie.cas) : -1; }, get historieRucni() { return historie?.rucni ?? false; },
   krokHistorie, uzelVHistorii, alfaHistorie, rucniHistorie, kresliZari,
 		pocet, rodic, typ, vaha, jmeno, cesta, hloubka, potomci, konecPodstromu, vazby, odchozi, prichozi,
 		get barva() { return barva; }, get barvaRgb() { return barvaRgb; }, get paleta() { return PALETY[paletaIdx]; }, get paletaIdx() { return paletaIdx; },
-		get sbalene() { return sbalene; }, get zavislostiZapnute() { return zavislostiZapnute; }, get vybrany() { return vybrany < pocet ? vybrany : -1; },
+		get sbalene() { return sbalene; }, get zavislostiZapnute() { return zavislostiZapnute; }, get hustotaVazeb() { return hustotaVazeb; }, get vybrany() { return vybrany < pocet ? vybrany : -1; },
         get tagy() { return tagy; }, get vybranyTag() { return vybrany >= pocet ? vybrany - pocet : -1; }, viditelneTagy,
 		jeTelefon, vyber, vazbyUzlu, polomerUrovne, odchylka, hexNaRgb, rgbNaCss, velikostPopisku, pismoPopisku, sirkaTextu, zavriVysledky,
 		// 2D rozložení a pravidla popisků pro 3D odvozené z 2D (k8): pozice, tečny, tloušťky, rozestupy, hlavní větev, orientace
 		get px() { return px; }, get py() { return py; }, get smer() { return smer; }, get tloustka() { return tloustka; }, get rozestup() { return rozestup; }, vetev,
 		get otoceno() { return otoceno; }, get natazeni() { return natazeni; },
-		ZLATY_UHEL, MAX_KRIVEK, PRAH_ROZESTUPU, PREHLED_DO, POPISEK_OD, MAX_POPISKU, RUST_POPISKU_SE_ZOOMEM: ROZPOCET_POPISKU.rustSZoomem,
+		ZLATY_UHEL, PRAH_ROZESTUPU, PREHLED_DO, POPISEK_OD, MAX_POPISKU, RUST_POPISKU_SE_ZOOMEM: ROZPOCET_POPISKU.rustSZoomem,
 		rozpocetPopiskuZaklad: (w: number, h: number) => sevri(Math.round(ROZPOCET_POPISKU.zaklad + w * h * ROZPOCET_POPISKU.naPx), ROZPOCET_POPISKU.min, ROZPOCET_POPISKU.max),
 		infoZavislosti: (text: string) => { prvek('zavislosti-info').textContent = text; },
 		hlaska: (text: string) => { stav.classList.remove('chyba'); stav.textContent = text || ''; stav.hidden = !text; },
@@ -2242,7 +2279,7 @@ function nactiVolby() {
 	paletaIdx = Number.isInteger(p) && p >= 0 && p < PALETY.length ? p : 0;
 	try { const s: unknown = JSON.parse(nacti(KLIC.sbalene) || '[]'); if (Array.isArray(s)) sbalene = new Set(s.filter((x) => typeof x === 'string')); } catch { sbalene = new Set(); }
 	tagLinks = nacti('mozek.tagLinks') === '1'; allTags = nacti('mozek.allTags') === '1';
-	zavislostiZapnute = nacti(KLIC.zavislosti) === '1';
+	hustotaVazeb = nactiHustotu(nacti(KLIC.zavislosti)); zavislostiZapnute = hustotaVazeb > 0;
 	hloubkaZapnuta = nacti(KLIC.hloubka) !== '0';
 	ostatniZapnute = nacti(KLIC.ostatni) === '1';
 }
@@ -2310,6 +2347,7 @@ function start(vstup: DataMapy) {
 		nastavPohled(rezimObnovy ?? (nacti(KLIC.pohled) === '3d' ? '3d' : '2d'), false);
 		rezimObnovy = null;
 		ladeni = {
+   get zavislosti() { return zavislostiZapnute ? { krivky: paryZavislosti2d && zavislostiCache ? Array.from(paryZavislosti2d.vybrane.subarray(0, paryZavislosti2d.n), i => zavislostiCache!.krivky[i]) : [], celkem: paryZavislosti2d?.celkem ?? 0, prepocet: agregaceVazeb.prepocet } : { krivky: [], celkem: 0, prepocet: agregaceVazeb.prepocet }; },
    get historie() { return historie ? { cas: historie.cas, trvani: historie.osa.trvani, rucni: historie.rucni, pauza: historie.pauza, odhaleno: odhaleno(historie.osa, historie.cas), viditelne: Array.from({ length: pocet }, (_, i) => i).filter(i => uzelVHistorii(i) && kotvaSbaleni(i) === i), pripravaMs: historiePripravaMs } : null; },
    rychlostHistorie(nasobek: number) { rychlostHistorie = Math.max(0, nasobek); },
    obalHistorie: () => obalHistorie(true), get historiePripravaMs() { return historiePripravaMs; },
@@ -2358,7 +2396,7 @@ function nastavVolby(zmeny: Readonly<Record<string, string | null>>) {
 	const ostatniPred = ostatniZapnute, paletaPred = paletaIdx;
 	nactiVolby();
 	prvek('tagLinks').checked = nacti('mozek.tagLinks') === '1'; prvek('allTags').checked = nacti('mozek.allTags') === '1';
-	prvek('ostatni').checked = ostatniZapnute; prvek('zavislosti').checked = zavislostiZapnute; prvek('hloubka').checked = hloubkaZapnuta;
+	prvek('ostatni').checked = ostatniZapnute; prvek('zavislosti').value = String(hustotaVazeb); prvek('hloubka').checked = hloubkaZapnuta;
 	prvek('paleta').value = String(paletaIdx); prvek('krouzeni').checked = nacti(KLIC.krouzeni) !== '0';
 	if (!zavislostiZapnute) prvek('zavislosti-info').textContent = '';
 	if (pohled3d) pohled3d.nastavKrouzeni(prvek('krouzeni').checked);

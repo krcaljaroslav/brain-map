@@ -1,3 +1,4 @@
+import { konstantyVazeb, vytvorCacheAgregace, vyberVazby, type HustotaVazeb } from './zavislosti.ts';
 import { konstantyHistorie, uOkrajeHistorie, cilHistorie, type ObalHistorie } from './historie.ts';
 import { barvaTagu, svetlaBarvaTagu, vytvorKresleniTagu, rozlozTagy3d, type BodTagu, type TagNaPlatne } from './tagy.ts';
 import type { TagMapy } from '../adapter.ts';
@@ -28,7 +29,7 @@ export function platnaKamera3d(stav: unknown): Kamera3d | null {
 // Adaptace webového rendereru: lokální DOM/čas, explicitní lifecycle, bez globální registrace.
 export interface Jadro3d {
  kresliZari?(c: CanvasRenderingContext2D, x: number, y: number, polomer: number, rgb: number[], klic: string, tvrdy: boolean, alfa: number): void;
- historie?: boolean; historieRucni?: boolean;
+ historie?: boolean; historieRucni?: boolean; pocetOdhalenych?: number;
  krokHistorie?(cas: number): boolean; uzelVHistorii?(i: number): boolean; alfaHistorie?(i: number): number; rucniHistorie?(): void;
     tagy?: TagMapy[]; vybranyTag?: number;
     viditelneTagy?(): { uzly: number[]; cary: [number, number][] };
@@ -40,9 +41,9 @@ export interface Jadro3d {
 	uOkrajeObrazovky(e: PointerEvent): boolean;
 	pocet: number; rodic: Int32Array; typ: Uint8Array; vaha: Float64Array; jmeno: string[]; cesta: string[]; hloubka: Int32Array; potomci: number[][];
  px: Float64Array; py: Float64Array; smer: Float64Array; tloustka: Float64Array; barvaRgb: number[][]; rozestup: Float64Array; vetev: Int32Array;
- otoceno: boolean; natazeni: number; sbalene: Set<string>; vybrany: number; vazby: number[][]; zavislostiZapnute: boolean;
+ otoceno: boolean; natazeni: number; sbalene: Set<string>; vybrany: number; vazby: number[][]; zavislostiZapnute: boolean; hustotaVazeb: HustotaVazeb;
  paletaIdx?: number; paleta: { ven: string; dovnitr: string; vazba: string }; texty?: import('./texty-mapy.ts').TextyMapy;
- MAX_KRIVEK: number; POPISEK_OD: number; PREHLED_DO: number; MAX_POPISKU: number; RUST_POPISKU_SE_ZOOMEM: number; PRAH_ROZESTUPU: number; rozpocetPopiskuZaklad(w: number, h: number): number; promitni2d(i: number): number[];
+ POPISEK_OD: number; PREHLED_DO: number; MAX_POPISKU: number; RUST_POPISKU_SE_ZOOMEM: number; PRAH_ROZESTUPU: number; rozpocetPopiskuZaklad(w: number, h: number): number; promitni2d(i: number): number[];
  odchylka(this: void, text: string, sul: string): number; hexNaRgb(hex: string): number[]; rgbNaCss(rgb: number[], alfa: number): string;
  vazbyUzlu(i: number): { ven: Map<number, number>; dovnitr: Map<number, number> };
  velikostPopisku(i: number): number; pismoPopisku(i: number, velikost: number): string; sirkaTextu(c: CanvasRenderingContext2D, text: string, pismo: string): number;
@@ -664,21 +665,33 @@ const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'
 		prebudujZavislosti();
 		spinave = false;
 	}
-	// závislosti mezi kotvami (sbalená větev se počítá do své složky), stejný strop a přepínač jako ve 2D
-	function prebudujZavislosti() {
+	// závislosti mezi kotvami (sbalená větev se počítá do své složky), procento v záběru a samostatný strop 3D
+ const { MAX_KRIVEK_3D, KLID_KAMERY_MS } = konstantyVazeb();
+ const agregaceVazeb = vytvorCacheAgregace();
+ let kotvyAgregace: Int32Array | null = null, historieAgregace = -1, vazbyAgregace: number[][] | null = null, vseAgregovane: [number, number][] = [];
+ let podpisKameryVazeb = '', posledniPohybVazeb = 0, cekaVyberVazeb = false, prepocetVazeb = 0, prepocetVazebMs = 0;
+ let vybraneParyVazeb: [number, number][] = [];
+ function podpisKamery() { return [...kam, ...cil, ...nahoru, sirka, vyska].join('|'); }
+ function prebudujZavislosti() {
+  const zacatek = okno.performance.now();
+  podpisKameryVazeb = podpisKamery(); cekaVyberVazeb = false;
+  vybraneParyVazeb = [];
+  prepocetVazeb++;
 		pocetZavislostiVrcholu = 0;
 		pocetZavislosti = { krivky: 0, celkem: 0 };
 		if (!j.zavislostiZapnute) return;
-		const mapa = new Map<number, number>();
-		for (const [a, b] of j.vazby) {
-   if (j.historie && (!j.uzelVHistorii?.(a) || !j.uzelVHistorii?.(b))) continue;
-			const va = kotva[a], vb = kotva[b];
-			if (va === vb) continue;
-			const klic = va < vb ? va * pocet + vb : vb * pocet + va;
-			mapa.set(klic, (mapa.get(klic) || 0) + 1);
-		}
-		const vse = [...mapa.entries()].sort((p, q) => q[1] - p[1]), krivky = vse.slice(0, j.MAX_KRIVEK), maxPocet = vse.length ? vse[0][1] : 1;
-		pocetZavislosti = { krivky: krivky.length, celkem: vse.length };
+  const odhaleno = j.pocetOdhalenych ?? -1;
+  if (kotvyAgregace !== kotva || historieAgregace !== odhaleno || vazbyAgregace !== j.vazby) {
+   const odhalene = Uint8Array.from({ length: pocet }, (_, i) => !j.historie || j.uzelVHistorii?.(i) ? 1 : 0);
+   vseAgregovane = agregaceVazeb.nacti(j.vazby, kotva, odhalene);
+   kotvyAgregace = kotva; historieAgregace = odhaleno; vazbyAgregace = j.vazby;
+  }
+  const vse = vseAgregovane, maxPocet = vse.length ? vse[0][1] : 1;
+  spocitejMatice(); promitniVse();
+  const vyber = vyberVazby(vse, pocet, i => poziceKonceVazby(i), { sirka, vyska }, j.hustotaVazeb, MAX_KRIVEK_3D, true);
+  const { krivky } = vyber;
+  vybraneParyVazeb = krivky;
+		pocetZavislosti = { krivky: krivky.length, celkem: vyber.celkem };
 		const rgb = j.hexNaRgb(j.paleta.vazba), tlum = j.vybrany >= 0 ? 0.15 : 1;
 		const poz = new Float32Array(krivky.length * 6), barva = new Float32Array(krivky.length * 6), sila = new Float32Array(krivky.length * 2), st = new Float32Array(krivky.length * 2).fill(tlum);
 		krivky.forEach(([klic, n], q) => {
@@ -690,8 +703,16 @@ const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'
 		});
 		pocetZavislostiVrcholu = krivky.length * 2;
 		if (pocetZavislostiVrcholu) { nahraj('zavPoz', poz); nahraj('zavBarva', barva); nahraj('zavSila', sila); nahraj('zavStav', st); }
-		if (aktivni) j.infoZavislosti(vse.length > krivky.length ? texty.krivkySkryte(krivky.length, vse.length, vse.length - krivky.length) : texty.krivek(vse.length));
+		if (aktivni) j.infoZavislosti(texty.vazbyPocet(krivky.length, vyber.celkem));
+  prepocetVazebMs = okno.performance.now() - zacatek;
 	}
+
+ function poziceKonceVazby(i: number) {
+  const x = rozlozeni.poz[i * 3], y = rozlozeni.poz[i * 3 + 1], z = rozlozeni.poz[i * 3 + 2], m = mvp;
+  const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+  if (w <= 0) return undefined;
+  return { x: ((m[0] * x + m[4] * y + m[8] * z + m[12]) / w * 0.5 + 0.5) * sirka, y: (0.5 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w * 0.5) * vyska };
+ }
 
 	// --- kamera ---
 	function stavKamery(): Kamera3d | null {
@@ -1270,10 +1291,16 @@ const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'
 		sledujLod(cas);
 		posledniCas = cas; vstupOd = Infinity;
 		if (ztracen || !gl) { konecSnimku = okno.performance.now(); if (dalsi) pozadujSnimek(); return; }
-		const klicVyberu = j.vybrany + '|' + (j.zavislostiZapnute ? 1 : 0);
+		const klicVyberu = j.vybrany + '|' + j.hustotaVazeb;
 		if (spinave || klicVyberu !== posledniKlicVyberu) { posledniKlicVyberu = klicVyberu; prebuduj(); }
 		spocitejMatice();
 		promitniVse();
+  if (j.zavislostiZapnute) {
+   const podpis = podpisKamery();
+   if (podpis !== podpisKameryVazeb) { podpisKameryVazeb = podpis; posledniPohybVazeb = cas; cekaVyberVazeb = true; }
+   if (cekaVyberVazeb && cas - posledniPohybVazeb >= KLID_KAMERY_MS && !kotvaKrouzeni && !let_) prebudujZavislosti();
+   if (cekaVyberVazeb) dalsi = true;
+  }
 		spocitejAlfy();
 		kresliGl(cas);
 		kresliPopisky();
@@ -1497,7 +1524,7 @@ const kresliTagy = vytvorKresleniTagu(dokument => vytvorPrvek(dokument, 'canvas'
 			get leti() { return !!let_; }, get krouzi() { return !!kotvaKrouzeni; }, get snimku() { return snimku; }, get posledniSnimekMs() { return posledniSnimekMs; },
 			get casySnimku() { return casySnimku.slice(); }, vynulujCasy() { casySnimku.length = 0; },
 			get popisky() { return [...zasahyPopisku].map(([id, o]) => ({ id, ...o })); }, get popiskyVyberu() { return [...zasahyPopiskuVyberu].map(([id, o]) => ({ id, ...o })); },
-			get zavislosti() { return { ...pocetZavislosti }; }, get impulzu() { return impulzy.length; }, get skrytych() { let n = 0; if (skryty) for (let i = 0; i < pocet; i++) n += skryty[i]; return n; },
+			get zavislosti() { return { ...pocetZavislosti, pary: vybraneParyVazeb, prepocet: prepocetVazeb, prepocetMs: prepocetVazebMs }; }, get impulzu() { return impulzy.length; }, get skrytych() { let n = 0; if (skryty) for (let i = 0; i < pocet; i++) n += skryty[i]; return n; },
 			promitni, zasah, poziceUzlu: (i: number) => rozlozeni ? poziceUzlu(i) : null, polomerSveta: (i: number) => rozlozeni ? rozlozeni.polomerSveta[i] : 0,
 			nastavKlid(ms: number) { posledniVstup = okno.performance.now() - ms; kotvaKrouzeni = null!; naplanujKlid(); pozadujSnimek(); },
 			ztratKontext() { const ext = gl && gl.getExtension('WEBGL_lose_context'); if (!ext) return false; ext.loseContext(); return true; },

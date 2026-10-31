@@ -39,8 +39,8 @@ export interface TextyMapy {
 	odchozich: string;
 	prichozich: string;
 	nicNenalezeno: string;
-	krivkySkryte(zobrazeno: number, celkem: number, skryto: number): string;
-	krivek(celkem: number): string;
+	vazbyOff: string;
+	vazbyPocet(zobrazeno: number, celkem: number): string;
 	prvniSnimek(ms: string): string;
 	snimekVyberu(ms: string): string;
 	nelze3d(duvod: string): string;
@@ -53,7 +53,7 @@ export interface TextyMapy {
 	neplatnaData: string;
 }
 
-export function vychoziTextyMapy(): TextyMapy {
+export function vychoziTextyMapy(locale = 'en'): TextyMapy {
  return {
   popisMapy: 'Mind map of the vault',
   popisMapy3d: 'Mind map of the vault in 3D',
@@ -94,8 +94,8 @@ export function vychoziTextyMapy(): TextyMapy {
   odchozich: 'outgoing',
   prichozich: 'incoming',
   nicNenalezeno: 'Nothing found',
-  krivkySkryte: (zobrazeno, celkem, skryto) => `${zobrazeno} of ${celkem}, ${skryto} hidden`,
-  krivek: (celkem) => `${celkem} curves`,
+  vazbyOff: 'Off',
+  vazbyPocet: (zobrazeno, celkem) => `${new Intl.NumberFormat(locale).format(zobrazeno)} of ${new Intl.NumberFormat(locale).format(celkem)}`,
   prvniSnimek: (ms) => `1st frame ${ms} ms`,
   snimekVyberu: (ms) => `selection ${ms} ms`,
   nelze3d: (duvod) => `3D view is not available here: ${duvod}. The map stays in 2D.`,

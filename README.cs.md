@@ -60,10 +60,10 @@ Volby zobrazení najdeš v panelu **Settings** v mapě; karta nastavení pluginu
 
 | Nastavení | Co dělá | Výchozí hodnota |
 |-----------|---------|-----------------|
-| **View** | Přepíná mezi 2D a 3D. | **2D** |
+| **View** | Přepíná mezi 2D a 3D. | **3D** |
 | **Palette** | Mění barvy větví. | **Aurora** |
 | **Depth (3D)** | Ve 2D zmenší a ztlumí vzdálenější uzly, takže mapa působí prostorově. Skutečné 3D zapneš ve **View**. | Zapnuto |
-| **Dependencies** | Zobrazuje odkazy mezi poznámkami a při zapnutém **Other files** i odkazy na další soubory. | Vypnuto |
+| **Dependencies** | Zobrazuje odkazy mezi poznámkami a při zapnutém **Other files** i odkazy na další soubory: Off, 25 %, 50 %, 75 % nebo 100 % odkazů, které mají aspoň jeden konec v záběru, od nejsilnějších. Po přiblížení na větev ukáže její vlastní odkazy. | Vypnuto |
 | **Other files** | Zahrne i jiné soubory než Markdown poznámky. | Vypnuto |
 | **Orbit when idle** | Po chvíli bez ovládání začne otáčet 3D pohledem. | Zapnuto |
 | **Tag links** | Po výběru poznámky ukáže jen její tagy a vazby k nim. | Vypnuto |
@@ -91,10 +91,12 @@ Stejný příkaz zapíše geometrii do `Brain-Map-diagnostika.md` v kořeni vaul
 
 - Strom složek a souborů je snímek. Změny struktury načti přes **Refresh map**.
 - Hledání prochází názvy, ne obsah poznámek, a ukáže nejvýše 12 výsledků.
-- **Dependencies** vykreslí nejvýše 1 500 křivek najednou (odkazy se slučují mezi viditelnými větvemi); počet skrytých ukáže vedle přepínače.
+- **Dependencies** ve 3D vykreslí nejvýše 3 000 křivek, procento se pak počítá z tohoto stropu. Ve 3D se výběr přepočítá, až se kamera zastaví. Číslo vedle volby ukazuje vykreslené z těch v záběru.
 - 3D potřebuje WebGL. Když není dostupné, mapa zůstane ve 2D.
 
 ## Changelog
+
+**0.2.2** - Dependencies mají místo přepínače volbu hustoty (Off / 25 / 50 / 75 / 100 %) a počítají se jen odkazy s koncem v záběru, takže po přiblížení uvidíš místní vazby. Dřívější „zapnuto“ se změní na 50 %. Nová instalace se otevře ve 3D s vypnutými vazbami. Posun a zoom ve 2D se zapnutými vazbami je rychlejší.
 
 **0.2.1** - Historie vaultu: tlačítko s hůlkou přehraje, jak složky a soubory vznikaly, ve 2D i 3D, s automatickým přiblížením, které skončí na celku. Tagy jsou nově metalicky červené. Zatržítka v panelu Settings mapy mají v Obsidianu jen jeden rámeček.
 

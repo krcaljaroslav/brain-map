@@ -1,6 +1,6 @@
 {
   "name": "brain-map",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Mind map of your vault, drawn like a neural network: folders as branches, notes as leaves, links between them.",
   "main": "main.js",
   "private": true,

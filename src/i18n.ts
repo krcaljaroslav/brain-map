@@ -24,7 +24,8 @@ const EN = {
   hloubka: 'Depth (3D)',
   hloubkaPopis: 'Same as the switch in the map settings (2D view).',
   zavislosti: 'Dependencies',
-  zavislostiPopis: 'Same as the switch in the map settings.',
+  hustotaPopis: 'Share of dependencies with an endpoint in view.',
+  vazbyOff: 'Off',
   ostatni: 'Other files',
   ostatniPopis: 'Adds files that are not notes to the map as well (PDF, images…).',
   krouzeni: 'Orbit when idle',
@@ -43,7 +44,7 @@ export function t(klic: KlicTextu, parametry: Readonly<Record<string, string>> =
  return EN[klic].replace(/\{(\w+)\}/g, (cele, jmeno: string) => parametry[jmeno] ?? cele);
 }
 export function nazvyPalet(): string[] { return KLICE_PALET.map(klic => t(klic)); }
-export const TEXTY_MAPY_EN: TextyMapy = vychoziTextyMapy();
+export const TEXTY_MAPY_EN: TextyMapy = vychoziTextyMapy('en');
 export function textyMapy(): TextyMapy { return TEXTY_MAPY_EN; }
 
 export const TEXTY_HISTORIE_EN = vychoziTextyHistorie();

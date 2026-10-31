@@ -60,10 +60,10 @@ Display controls are in the map's **Settings** panel; the plugin settings tab al
 
 | Setting | What it does | Default |
 |---------|--------------|---------|
-| **View** | Switches between 2D and 3D. | **2D** |
+| **View** | Switches between 2D and 3D. | **3D** |
 | **Palette** | Changes branch colours. | **Aurora** |
 | **Depth (3D)** | In 2D, scales and dims distant nodes so the map looks layered. The real 3D view is under **View**. | On |
-| **Dependencies** | Shows links between notes and, with **Other files** enabled, links to those files. | Off |
+| **Dependencies** | Shows links between notes and, with **Other files** enabled, links to those files: Off, 25 %, 50 %, 75 % or 100 % of the links with at least one end in view, strongest first. Zooming in on a branch shows its own links. | Off |
 | **Other files** | Includes files other than Markdown notes. | Off |
 | **Orbit when idle** | Rotates the 3D view after a period without input. | On |
 | **Tag links** | When a note is selected, shows only its tags and the links to them. | Off |
@@ -91,10 +91,12 @@ The same command writes geometry to `Brain-Map-diagnostika.md` at the vault root
 
 - The folder and file tree is a snapshot. Use **Refresh map** for structural changes.
 - Search matches names, not note contents, and shows at most 12 results.
-- **Dependencies** draws at most 1,500 curves at once (links are bundled between visible branches); the count of hidden ones appears next to the switch.
+- **Dependencies** in 3D draws at most 3,000 curves; the percentage then applies to that limit. In 3D the selection updates once the camera stops. The count next to the option shows drawn of in view.
 - 3D requires WebGL. If it is unavailable, the map stays in 2D.
 
 ## Changelog
+
+**0.2.2** - Dependencies have a density option (Off / 25 / 50 / 75 / 100 %) instead of the switch, and only links with an end in view count, so zooming in shows the local links. Earlier "on" becomes 50 %. A new install opens in 3D with links off. 2D panning and zooming with links on is faster.
 
 **0.2.1** - Vault history: the wand button plays how folders and files appeared over time, in 2D and 3D, with automatic zoom that ends on the overview. Tags are now a metallic red. The checkboxes in the map's Settings show a single box in Obsidian.
 

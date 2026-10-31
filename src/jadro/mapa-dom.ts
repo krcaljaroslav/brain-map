@@ -42,7 +42,7 @@ export function postavDom(dokument: Document, kontejner: HTMLElement, t: TextyMa
 			el('div', { class: 'pole' }, [t.pohled, el('div', { class: 'radek prepinac-pohledu' }, [
 				tlacitko('pohled-2d', '2D', { 'aria-pressed': 'true' }), tlacitko('pohled-3d', '3D', { 'aria-pressed': 'false' }),
 			]), el('span', { klic: 'pohled-info', class: 'napoveda' })]),
-			el('label', { class: 'prepinac' }, [el('input', { klic: 'zavislosti', type: 'checkbox' }), ` ${t.zavislosti} `, el('span', { klic: 'zavislosti-info', class: 'info' })]),
+			el('label', { class: 'pole' }, [t.zavislosti, el('select', { klic: 'zavislosti' }, [0, 25, 50, 75, 100].map(procento => el('option', { value: String(procento), text: procento ? `${procento} %` : t.vazbyOff }))), el('span', { klic: 'zavislosti-info', class: 'info' })]),
 			el('div', { class: 'radek' }, [prepinac('tagLinks', t.tagLinks), prepinac('allTags', t.allTags)]),
 			prepinac('ostatni', t.ostatni),
 			prepinac('hloubka', t.hloubka, { checked: true }, 'prepinac jen-2d'),
